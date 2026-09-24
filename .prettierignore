@@ -1,0 +1,7 @@
+.next
+node_modules
+public
+bun.lockb
+package-lock.json
+AGENTS.md
+CLAUDE.md

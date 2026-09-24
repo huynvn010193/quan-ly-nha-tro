@@ -1,0 +1,33 @@
+{
+  "name": "quan-ly-nha-tro",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.0.18",
+  "scripts": {
+    "dev": "next dev -p 3002",
+    "build": "next build",
+    "start": "next start -p 3002",
+    "lint": "eslint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:seed": "bun src/backend/scripts/seed-rooms.ts"
+  },
+  "dependencies": {
+    "lucide-react": "^1.48.0",
+    "mongodb": "^7.6.0",
+    "next": "16.3.6",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.6",
+    "prettier": "^3.9.9",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
