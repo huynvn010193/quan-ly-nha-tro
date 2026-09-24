@@ -35,8 +35,12 @@ import {
   Zap,
   type LucideIcon
 } from 'lucide-react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CreateRoomInput, Room, RoomStatus } from '@/backend/rooms/room.types';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 type View = 'overview' | 'rooms' | 'tenants' | 'invoices' | 'finance' | 'maintenance';
 
@@ -56,17 +60,17 @@ const invoices = [
   { id: 'HD-0925-05', room: 'P.203', tenant: 'Vũ Khánh Linh', amount: 4260000, date: '02/09/2025', status: 'Đã thanh toán' }
 ];
 
-const navItems: { id: View; label: string; icon: LucideIcon }[] = [
-  { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard },
-  { id: 'rooms', label: 'Quản lý phòng', icon: DoorOpen },
-  { id: 'tenants', label: 'Người thuê', icon: UsersRound },
-  { id: 'invoices', label: 'Hóa đơn', icon: FileText },
-  { id: 'finance', label: 'Thu & chi', icon: WalletCards },
-  { id: 'maintenance', label: 'Sự cố & sửa chữa', icon: Wrench }
+const navItems: { id: View; label: string; icon: LucideIcon; href: string }[] = [
+  { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard, href: '/' },
+  { id: 'rooms', label: 'Quản lý phòng', icon: DoorOpen, href: '/manager-room' },
+  { id: 'tenants', label: 'Người thuê', icon: UsersRound, href: '/manager-tenant' },
+  { id: 'invoices', label: 'Hóa đơn', icon: FileText, href: '/manager-invoice' },
+  { id: 'finance', label: 'Thu & chi', icon: WalletCards, href: '/manager-finance' },
+  { id: 'maintenance', label: 'Sự cố & sửa chữa', icon: Wrench, href: '/manager-maintenance' }
 ];
 
 const viewTitles: Record<View, { title: string; subtitle: string }> = {
-  overview: { title: 'Chào buổi sáng, Minh!', subtitle: 'Đây là tình hình nhà trọ của bạn hôm nay.' },
+  overview: { title: 'Chào buổi sáng, Tam Ke!', subtitle: 'Đây là tình hình nhà trọ của bạn hôm nay.' },
   rooms: { title: 'Quản lý phòng', subtitle: 'Theo dõi trạng thái và thông tin từng phòng.' },
   tenants: { title: 'Người thuê', subtitle: 'Quản lý hồ sơ và hợp đồng người thuê.' },
   invoices: { title: 'Hóa đơn', subtitle: 'Kiểm tra và theo dõi thanh toán hàng tháng.' },
@@ -76,6 +80,16 @@ const viewTitles: Record<View, { title: string; subtitle: string }> = {
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat('vi-VN').format(value) + 'đ';
+}
+
+function formatCurrencyInput(value: string | number) {
+  const digits = String(value).replace(/\D/g, '');
+  return digits ? new Intl.NumberFormat('vi-VN').format(Number(digits)) : '';
+}
+
+function parseCurrencyInput(value: string) {
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number(digits) : 0;
 }
 
 async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -810,7 +824,7 @@ function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClose: () 
 function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => void; onSave: (room: Room) => Promise<void> }) {
   const [name, setName] = useState(room.name);
   const [tenant, setTenant] = useState(room.status === 'Còn trống' ? '' : room.tenant);
-  const [price, setPrice] = useState(String(room.price));
+  const [price, setPrice] = useState(formatCurrencyInput(room.price));
   const [status, setStatus] = useState<RoomStatus>(room.status);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -820,7 +834,7 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
       setError('Vui lòng nhập tên phòng.');
       return;
     }
-    const nextPrice = Number(price);
+    const nextPrice = parseCurrencyInput(price);
     if (!Number.isFinite(nextPrice) || nextPrice <= 0) {
       setError('Giá thuê phải lớn hơn 0.');
       return;
@@ -877,7 +891,7 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
         <div className='mt-6 space-y-4'>
           <label className='block'>
             <span className='field-label'>Tên phòng</span>
-            <input
+            <Input
               autoFocus
               value={name}
               onChange={(event) => {
@@ -890,7 +904,7 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
           </label>
           <label className='block'>
             <span className='field-label'>Người thuê</span>
-            <input
+            <Input
               value={tenant}
               onChange={(event) => {
                 setTenant(event.target.value);
@@ -904,12 +918,12 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
           <label className='block'>
             <span className='field-label'>Giá thuê hàng tháng</span>
             <div className='relative'>
-              <input
-                type='number'
-                min='1'
+              <Input
+                type='text'
+                inputMode='numeric'
                 value={price}
                 onChange={(event) => {
-                  setPrice(event.target.value);
+                  setPrice(formatCurrencyInput(event.target.value));
                   setError('');
                 }}
                 className='field-input pr-14'
@@ -919,19 +933,23 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
           </label>
           <label className='block'>
             <span className='field-label'>Trạng thái</span>
-            <select
+            <Select
               value={status}
-              onChange={(event) => {
-                const nextStatus = event.target.value as RoomStatus;
+              onValueChange={(value) => {
+                const nextStatus = value as RoomStatus;
                 setStatus(nextStatus);
                 setError('');
               }}
-              className='field-input'
             >
-              <option value='Đang thuê'>Đang thuê</option>
-              <option value='Còn trống'>Còn trống</option>
-              <option value='Sắp trả'>Sắp trả</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder='Chọn trạng thái' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='Đang thuê'>Đang thuê</SelectItem>
+                <SelectItem value='Còn trống'>Còn trống</SelectItem>
+                <SelectItem value='Sắp trả'>Sắp trả</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           {error && (
             <p role='alert' className='rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-600'>
@@ -956,7 +974,7 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
 function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: CreateRoomInput) => Promise<void> }) {
   const [name, setName] = useState('');
   const [tenant, setTenant] = useState('');
-  const [price, setPrice] = useState('3500000');
+  const [price, setPrice] = useState('3.500.000');
   const [floor, setFloor] = useState('Tầng 1');
   const [status, setStatus] = useState<RoomStatus>('Đang thuê');
   const [error, setError] = useState('');
@@ -966,7 +984,8 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
       setError('Vui lòng nhập tên phòng.');
       return;
     }
-    if (!Number(price) || Number(price) <= 0) {
+    const nextPrice = parseCurrencyInput(price);
+    if (!nextPrice || nextPrice <= 0) {
       setError('Giá thuê phải lớn hơn 0.');
       return;
     }
@@ -981,7 +1000,7 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
         name: name.toUpperCase(),
         floor,
         tenant: status === 'Còn trống' ? 'Chưa có người thuê' : tenant.trim(),
-        price: Number(price),
+        price: nextPrice,
         status,
         people: status === 'Còn trống' ? 0 : 1
       });
@@ -1011,7 +1030,7 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
         <div className='mt-6 space-y-4'>
           <label className='block'>
             <span className='field-label'>Tên phòng</span>
-            <input
+            <Input
               autoFocus
               value={name}
               onChange={(event) => {
@@ -1024,7 +1043,7 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
           </label>
           <label className='block'>
             <span className='field-label'>Tên người thuê</span>
-            <input
+            <Input
               value={tenant}
               onChange={(event) => {
                 setTenant(event.target.value);
@@ -1037,11 +1056,12 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
           </label>
           <label className='block'>
             <span className='field-label'>Giá thuê hàng tháng</span>
-            <input
-              type='number'
+            <Input
+              type='text'
+              inputMode='numeric'
               value={price}
               onChange={(event) => {
-                setPrice(event.target.value);
+                setPrice(formatCurrencyInput(event.target.value));
                 setError('');
               }}
               className='field-input'
@@ -1049,33 +1069,41 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
           </label>
           <label className='block'>
             <span className='field-label'>Tầng</span>
-            <select
+            <Select
               value={floor}
-              onChange={(event) => {
-                setFloor(event.target.value);
+              onValueChange={(value) => {
+                setFloor(value);
                 setError('');
               }}
-              className='field-input'
             >
-              <option>Tầng 1</option>
-              <option>Tầng 2</option>
-              <option>Tầng 3</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder='Chọn tầng' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='Tầng 1'>Tầng 1</SelectItem>
+                <SelectItem value='Tầng 2'>Tầng 2</SelectItem>
+                <SelectItem value='Tầng 3'>Tầng 3</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           <label className='block'>
             <span className='field-label'>Trạng thái</span>
-            <select
+            <Select
               value={status}
-              onChange={(event) => {
-                setStatus(event.target.value as RoomStatus);
+              onValueChange={(value) => {
+                setStatus(value as RoomStatus);
                 setError('');
               }}
-              className='field-input'
             >
-              <option value='Đang thuê'>Đang thuê</option>
-              <option value='Còn trống'>Còn trống</option>
-              <option value='Sắp trả'>Sắp trả</option>
-            </select>
+              <SelectTrigger>
+                <SelectValue placeholder='Chọn trạng thái' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='Đang thuê'>Đang thuê</SelectItem>
+                <SelectItem value='Còn trống'>Còn trống</SelectItem>
+                <SelectItem value='Sắp trả'>Sắp trả</SelectItem>
+              </SelectContent>
+            </Select>
           </label>
           {error && (
             <p role='alert' className='rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-600'>
@@ -1097,8 +1125,9 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
   );
 }
 
-export function BoardingHouseDashboard() {
-  const [view, setView] = useState<View>('overview');
+export function BoardingHouseDashboard({ initialView = 'overview' }: { initialView?: View }) {
+  const router = useRouter();
+  const [view, setView] = useState<View>(initialView);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -1147,6 +1176,7 @@ export function BoardingHouseDashboard() {
     });
     setRooms((currentRooms) => [...currentRooms, response.data].sort((left, right) => left.name.localeCompare(right.name, 'vi')));
     setView('rooms');
+    router.push('/manager-room');
   };
 
   const updateRoom = async (room: Room) => {
@@ -1163,11 +1193,6 @@ export function BoardingHouseDashboard() {
     setRooms((currentRooms) => currentRooms.filter((item) => item.id !== room.id));
   };
 
-  const changeView = (next: View) => {
-    setView(next);
-    setSidebarOpen(false);
-    setQuery('');
-  };
   return (
     <div className='min-h-screen bg-[#f5f7f5] text-slate-800'>
       {sidebarOpen && (
@@ -1189,15 +1214,32 @@ export function BoardingHouseDashboard() {
         </div>
         <nav className='mt-9 space-y-1.5'>
           <p className='mb-3 px-3 text-[9px] font-bold uppercase tracking-[.16em] text-slate-400'>Quản lý</p>
-          {navItems.map((item) => (
-            <button key={item.id} onClick={() => changeView(item.id)} className={`nav-item ${view === item.id ? 'nav-item-active' : ''}`}>
-              <item.icon size={18} />
-              <span>{item.label}</span>
-              {item.id === 'maintenance' && (
-                <span className='ml-auto grid size-5 place-items-center rounded-full bg-rose-50 text-[9px] font-bold text-rose-600'>2</span>
-              )}
-            </button>
-          ))}
+          {navItems.map((item) => {
+            const className = `nav-item ${view === item.id ? 'nav-item-active' : ''}`;
+            const content = (
+              <>
+                <item.icon size={18} />
+                <span>{item.label}</span>
+                {item.id === 'maintenance' && (
+                  <span className='ml-auto grid size-5 place-items-center rounded-full bg-rose-50 text-[9px] font-bold text-rose-600'>2</span>
+                )}
+              </>
+            );
+
+            return (
+              <Link
+                key={item.id}
+                href={item.href}
+                onClick={() => {
+                  setSidebarOpen(false);
+                  setQuery('');
+                }}
+                className={className}
+              >
+                {content}
+              </Link>
+            );
+          })}
         </nav>
         <div className='mt-7'>
           <p className='mb-3 px-3 text-[9px] font-bold uppercase tracking-[.16em] text-slate-400'>Hệ thống</p>
@@ -1239,7 +1281,7 @@ export function BoardingHouseDashboard() {
           </div>
           <div className='relative hidden w-full max-w-[340px] md:block'>
             <Search size={16} className='absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400' />
-            <input
+            <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder='Tìm phòng, người thuê, hóa đơn...'
@@ -1261,10 +1303,10 @@ export function BoardingHouseDashboard() {
             </button>
           </div>
         </header>
-        <main className='mx-auto max-w-[1460px] p-4 sm:p-7 lg:p-9'>
+        <main className='mx-auto max-w-365 p-4 sm:p-7 lg:p-9'>
           <div className='mb-7 flex flex-wrap items-end justify-between gap-4'>
             <div>
-              <p className='mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-emerald-700'>Khu nhà A · Quận Bình Thạnh</p>
+              <p className='mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-emerald-700'>Khu nhà A · Nguyễn Văn Quá</p>
               <h1 className='text-[25px] font-extrabold tracking-[-.035em] text-slate-900 sm:text-[29px]'>{current.title}</h1>
               <p className='mt-1 text-[12px] text-slate-400'>{current.subtitle}</p>
             </div>
@@ -1277,7 +1319,7 @@ export function BoardingHouseDashboard() {
           </div>
           <div className='relative mb-5 md:hidden'>
             <Search size={16} className='absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400' />
-            <input
+            <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder='Tìm kiếm...'
