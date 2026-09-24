@@ -1,6 +1,8 @@
 'use client';
 
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeft,
   Bell,
   Building2,
   CalendarDays,
@@ -28,21 +30,26 @@ import {
   TrendingDown,
   TrendingUp,
   UserRound,
+  UserPlus,
   UsersRound,
   WalletCards,
   Wrench,
-  X,
   Zap,
   type LucideIcon
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CreateRoomInput, Room, RoomStatus } from '@/backend/rooms/room.types';
+import { useMemo, useState } from 'react';
+import type { CreateRoomInput, Room, RoomListResult, RoomStatus } from '@/backend/rooms/room.types';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
+import { TenantCreateForm } from './tenant-create-form';
 
-type View = 'overview' | 'rooms' | 'tenants' | 'invoices' | 'finance' | 'maintenance';
+type View = 'overview' | 'rooms' | 'tenants' | 'tenant-create' | 'invoices' | 'finance' | 'maintenance';
+
+const roomsQueryKey = ['rooms'] as const;
 
 const tenants = [
   { name: 'Nguyễn Minh Anh', room: 'P.101', phone: '090 812 3456', since: '12/04/2024', initials: 'MA', color: 'bg-[#d9f2e5] text-[#14734a]' },
@@ -73,6 +80,7 @@ const viewTitles: Record<View, { title: string; subtitle: string }> = {
   overview: { title: 'Chào buổi sáng, Tam Ke!', subtitle: 'Đây là tình hình nhà trọ của bạn hôm nay.' },
   rooms: { title: 'Quản lý phòng', subtitle: 'Theo dõi trạng thái và thông tin từng phòng.' },
   tenants: { title: 'Người thuê', subtitle: 'Quản lý hồ sơ và hợp đồng người thuê.' },
+  'tenant-create': { title: 'Thêm người thuê', subtitle: 'Nhập thông tin nhân khẩu và phân người thuê vào phòng.' },
   invoices: { title: 'Hóa đơn', subtitle: 'Kiểm tra và theo dõi thanh toán hàng tháng.' },
   finance: { title: 'Thu & chi', subtitle: 'Nắm rõ dòng tiền và hiệu quả vận hành.' },
   maintenance: { title: 'Sự cố & sửa chữa', subtitle: 'Tiếp nhận và xử lý yêu cầu của người thuê.' }
@@ -756,35 +764,18 @@ function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClose: () 
   };
 
   return (
-    <div className='fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4 backdrop-blur-sm' onMouseDown={onClose}>
-      <div
-        role='alertdialog'
-        aria-modal='true'
-        aria-labelledby='delete-room-title'
-        aria-describedby='delete-room-description'
-        className='w-full max-w-md rounded-[24px] bg-white p-6 shadow-2xl'
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+    <Dialog open onOpenChange={(open) => !open && !deleting && onClose()}>
+      <DialogContent className='max-w-md' showCloseButton={!deleting}>
         <div className='flex items-start gap-4'>
           <span className='grid size-12 shrink-0 place-items-center rounded-2xl bg-rose-50 text-rose-600'>
             <Trash2 size={21} />
           </span>
-          <div className='min-w-0 flex-1'>
-            <h2 id='delete-room-title' className='text-lg font-bold text-slate-900'>
-              Xóa phòng {room.name}?
-            </h2>
-            <p id='delete-room-description' className='mt-2 text-sm leading-6 text-slate-500'>
+          <DialogHeader className='min-w-0 flex-1 pr-9'>
+            <DialogTitle>Xóa phòng {room.name}?</DialogTitle>
+            <DialogDescription className='mt-1 text-sm leading-6 text-slate-500'>
               Phòng sẽ bị xóa khỏi hệ thống và không thể khôi phục. Thao tác này không ảnh hưởng đến các phòng khác.
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            disabled={deleting}
-            className='grid size-9 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200'
-            aria-label='Đóng'
-          >
-            <X size={17} />
-          </button>
+            </DialogDescription>
+          </DialogHeader>
         </div>
         <div className='mt-5 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3'>
           <div className='flex items-center justify-between gap-4'>
@@ -803,7 +794,7 @@ function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClose: () 
             {error}
           </p>
         )}
-        <div className='mt-6 flex justify-end gap-3'>
+        <DialogFooter className='mt-6'>
           <button onClick={onClose} disabled={deleting} className='soft-button px-5 disabled:opacity-60'>
             Hủy
           </button>
@@ -812,12 +803,12 @@ function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClose: () 
             disabled={deleting}
             className='inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 text-[11px] font-bold text-white shadow-[0_6px_18px_rgba(225,29,72,.18)] transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60'
           >
-            <Trash2 size={16} />
+            {deleting ? <Spinner /> : <Trash2 size={16} />}
             {deleting ? 'Đang xóa...' : 'Xóa phòng'}
           </button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -862,32 +853,17 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
   };
 
   return (
-    <div className='fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4 backdrop-blur-sm' onMouseDown={onClose}>
-      <div
-        role='dialog'
-        aria-modal='true'
-        aria-labelledby='edit-room-title'
-        className='w-full max-w-md rounded-[24px] bg-white p-6 shadow-2xl'
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className='flex items-center justify-between'>
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent className='max-w-md' showCloseButton={!saving}>
+        <DialogHeader className='pr-9'>
           <div>
             <p className='text-[10px] font-bold uppercase tracking-[.14em] text-emerald-700'>
               {room.name} · {room.floor}
             </p>
-            <h2 id='edit-room-title' className='mt-1 text-lg font-bold text-slate-900'>
-              Chỉnh sửa thông tin phòng
-            </h2>
-            <p className='mt-1 text-xs text-slate-400'>Cập nhật thông tin thuê và trạng thái phòng.</p>
+            <DialogTitle className='mt-1'>Chỉnh sửa thông tin phòng</DialogTitle>
+            <DialogDescription className='mt-1'>Cập nhật thông tin thuê và trạng thái phòng.</DialogDescription>
           </div>
-          <button
-            onClick={onClose}
-            className='grid size-9 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200'
-            aria-label='Đóng'
-          >
-            <X size={17} />
-          </button>
-        </div>
+        </DialogHeader>
         <div className='mt-6 space-y-4'>
           <label className='block'>
             <span className='field-label'>Tên phòng</span>
@@ -957,17 +933,17 @@ function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => v
             </p>
           )}
         </div>
-        <div className='mt-6 flex justify-end gap-3'>
+        <DialogFooter className='mt-6'>
           <button onClick={onClose} className='soft-button px-5'>
             Hủy
           </button>
           <button onClick={submit} disabled={saving} className='primary-button px-5 disabled:cursor-not-allowed disabled:opacity-60'>
-            <Check size={16} />
+            {saving ? <Spinner /> : <Check size={16} />}
             {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
           </button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1012,21 +988,12 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
     }
   };
   return (
-    <div className='fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4 backdrop-blur-sm' onMouseDown={onClose}>
-      <div className='w-full max-w-md rounded-[24px] bg-white p-6 shadow-2xl' onMouseDown={(event) => event.stopPropagation()}>
-        <div className='flex items-center justify-between'>
-          <div>
-            <h2 className='text-lg font-bold text-slate-900'>Thêm phòng mới</h2>
-            <p className='mt-1 text-xs text-slate-400'>Nhập thông tin cơ bản của phòng.</p>
-          </div>
-          <button
-            onClick={onClose}
-            className='grid size-9 place-items-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200'
-            aria-label='Đóng'
-          >
-            <X size={17} />
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent className='max-w-md' showCloseButton={!saving}>
+        <DialogHeader className='pr-9'>
+          <DialogTitle>Thêm phòng mới</DialogTitle>
+          <DialogDescription className='mt-1'>Nhập thông tin cơ bản của phòng.</DialogDescription>
+        </DialogHeader>
         <div className='mt-6 space-y-4'>
           <label className='block'>
             <span className='field-label'>Tên phòng</span>
@@ -1111,87 +1078,95 @@ function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (room: C
             </p>
           )}
         </div>
-        <div className='mt-6 flex justify-end gap-3'>
+        <DialogFooter className='mt-6'>
           <button onClick={onClose} className='soft-button px-5'>
             Hủy
           </button>
           <button onClick={submit} disabled={saving} className='primary-button px-5 disabled:cursor-not-allowed disabled:opacity-60'>
-            <Plus size={16} />
+            {saving ? <Spinner /> : <Plus size={16} />}
             {saving ? 'Đang thêm...' : 'Thêm phòng'}
           </button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 export function BoardingHouseDashboard({ initialView = 'overview' }: { initialView?: View }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [view, setView] = useState<View>(initialView);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [roomsLoading, setRoomsLoading] = useState(true);
-  const [roomsError, setRoomsError] = useState('');
   const [query, setQuery] = useState('');
   const current = useMemo(() => viewTitles[view], [view]);
+  const needsRooms = view === 'overview' || view === 'rooms' || view === 'tenant-create';
 
-  const loadRooms = useCallback(async () => {
-    try {
-      setRoomsLoading(true);
-      setRoomsError('');
-      const response = await apiRequest<{ data: Room[] }>('/api/rooms?limit=100', { cache: 'no-store' });
-      setRooms(response.data);
-    } catch (error) {
-      setRoomsError(error instanceof Error ? error.message : 'Không thể tải danh sách phòng.');
-    } finally {
-      setRoomsLoading(false);
-    }
-  }, []);
+  const roomsQuery = useQuery({
+    queryKey: roomsQueryKey,
+    queryFn: () => apiRequest<RoomListResult>('/api/rooms?limit=100', { cache: 'no-store' }),
+    enabled: needsRooms
+  });
 
-  useEffect(() => {
-    let cancelled = false;
+  const refreshRooms = () => queryClient.invalidateQueries({ queryKey: roomsQueryKey });
 
-    apiRequest<{ data: Room[] }>('/api/rooms?limit=100', { cache: 'no-store' })
-      .then((response) => {
-        if (!cancelled) setRooms(response.data);
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) setRoomsError(error instanceof Error ? error.message : 'Không thể tải danh sách phòng.');
-      })
-      .finally(() => {
-        if (!cancelled) setRoomsLoading(false);
-      });
+  const createRoomMutation = useMutation({
+    mutationFn: (input: CreateRoomInput) =>
+      apiRequest<{ data: Room }>('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input)
+      }),
+    onSuccess: refreshRooms
+  });
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const updateRoomMutation = useMutation({
+    mutationFn: (room: Room) =>
+      apiRequest<{ data: Room }>(`/api/rooms/${room.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: room.name, tenant: room.tenant, price: room.price, status: room.status, people: room.people })
+      }),
+    onSuccess: refreshRooms
+  });
+
+  const deleteRoomMutation = useMutation({
+    mutationFn: (room: Room) => apiRequest<void>(`/api/rooms/${room.id}`, { method: 'DELETE' }),
+    onSuccess: refreshRooms
+  });
+
+  const rooms = roomsQuery.data?.data ?? [];
+  const roomsError = roomsQuery.error instanceof Error ? roomsQuery.error.message : roomsQuery.error ? 'Không thể tải danh sách phòng.' : '';
 
   const addRoom = async (input: CreateRoomInput) => {
-    const response = await apiRequest<{ data: Room }>('/api/rooms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input)
-    });
-    setRooms((currentRooms) => [...currentRooms, response.data].sort((left, right) => left.name.localeCompare(right.name, 'vi')));
+    await createRoomMutation.mutateAsync(input);
     setView('rooms');
     router.push('/manager-room');
   };
 
   const updateRoom = async (room: Room) => {
-    const response = await apiRequest<{ data: Room }>(`/api/rooms/${room.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: room.name, tenant: room.tenant, price: room.price, status: room.status, people: room.people })
-    });
-    setRooms((currentRooms) => currentRooms.map((item) => (item.id === response.data.id ? response.data : item)));
+    await updateRoomMutation.mutateAsync(room);
   };
 
   const deleteRoom = async (room: Room) => {
-    await apiRequest<void>(`/api/rooms/${room.id}`, { method: 'DELETE' });
-    setRooms((currentRooms) => currentRooms.filter((item) => item.id !== room.id));
+    await deleteRoomMutation.mutateAsync(room);
   };
+
+  if (roomsQuery.isLoading) {
+    return (
+      <div className='grid min-h-screen place-items-center bg-[#f5f7f5] px-4'>
+        <div role='status' className='flex flex-col items-center gap-3 text-center'>
+          <span className='grid size-14 place-items-center rounded-2xl bg-white text-emerald-700 shadow-sm'>
+            <Spinner className='size-6' />
+          </span>
+          <div>
+            <p className='text-sm font-bold text-slate-700'>Đang tải dữ liệu</p>
+            <p className='mt-1 text-xs text-slate-400'>Vui lòng chờ trong giây lát...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className='min-h-screen bg-[#f5f7f5] text-slate-800'>
@@ -1215,7 +1190,8 @@ export function BoardingHouseDashboard({ initialView = 'overview' }: { initialVi
         <nav className='mt-9 space-y-1.5'>
           <p className='mb-3 px-3 text-[9px] font-bold uppercase tracking-[.16em] text-slate-400'>Quản lý</p>
           {navItems.map((item) => {
-            const className = `nav-item ${view === item.id ? 'nav-item-active' : ''}`;
+            const isActive = view === item.id || (view === 'tenant-create' && item.id === 'tenants');
+            const className = `nav-item ${isActive ? 'nav-item-active' : ''}`;
             const content = (
               <>
                 <item.icon size={18} />
@@ -1306,7 +1282,17 @@ export function BoardingHouseDashboard({ initialView = 'overview' }: { initialVi
         <main className='mx-auto max-w-365 p-4 sm:p-7 lg:p-9'>
           <div className='mb-7 flex flex-wrap items-end justify-between gap-4'>
             <div>
-              <p className='mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-emerald-700'>Khu nhà A · Nguyễn Văn Quá</p>
+              {view === 'tenant-create' ? (
+                <nav aria-label='Breadcrumb' className='mb-2 flex items-center gap-1.5 text-[10px] font-semibold text-slate-400'>
+                  <Link href='/manager-tenant' className='transition hover:text-emerald-700'>
+                    Người thuê
+                  </Link>
+                  <ChevronRight className='size-3' />
+                  <span className='text-emerald-700'>Thêm người thuê</span>
+                </nav>
+              ) : (
+                <p className='mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-emerald-700'>Khu nhà A · Nguyễn Văn Quá</p>
+              )}
               <h1 className='text-[25px] font-extrabold tracking-[-.035em] text-slate-900 sm:text-[29px]'>{current.title}</h1>
               <p className='mt-1 text-[12px] text-slate-400'>{current.subtitle}</p>
             </div>
@@ -1316,25 +1302,39 @@ export function BoardingHouseDashboard({ initialView = 'overview' }: { initialVi
                 Thêm phòng mới
               </button>
             )}
+            {view === 'tenants' && (
+              <Link href='/manager-tenant/add' className='primary-button'>
+                <UserPlus size={17} strokeWidth={2.5} />
+                Thêm người thuê
+              </Link>
+            )}
+            {view === 'tenant-create' && (
+              <Link href='/manager-tenant' className='soft-button h-10 px-4'>
+                <ArrowLeft size={16} />
+                Quay lại danh sách
+              </Link>
+            )}
           </div>
-          <div className='relative mb-5 md:hidden'>
-            <Search size={16} className='absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400' />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder='Tìm kiếm...'
-              className='h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs outline-none'
-            />
-          </div>
-          {roomsError && (view === 'overview' || view === 'rooms') && (
+          {view !== 'tenant-create' && (
+            <div className='relative mb-5 md:hidden'>
+              <Search size={16} className='absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400' />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder='Tìm kiếm...'
+                className='h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs outline-none'
+              />
+            </div>
+          )}
+          {roomsError && needsRooms && (
             <div className='mb-5 flex items-center justify-between gap-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700'>
               <span>{roomsError}</span>
-              <button onClick={() => void loadRooms()} className='font-bold hover:underline'>
+              <button onClick={() => void roomsQuery.refetch()} className='font-bold hover:underline'>
                 Thử lại
               </button>
             </div>
           )}
-          {roomsLoading && (view === 'overview' || view === 'rooms') && (
+          {roomsQuery.isFetching && !roomsQuery.isLoading && needsRooms && (
             <div className='mb-5 h-1 overflow-hidden rounded-full bg-emerald-100'>
               <div className='h-full w-1/2 animate-pulse rounded-full bg-emerald-600' />
             </div>
@@ -1342,6 +1342,7 @@ export function BoardingHouseDashboard({ initialView = 'overview' }: { initialVi
           {view === 'overview' && <Overview rooms={rooms} />}
           {view === 'rooms' && <RoomsView rooms={rooms} query={query} onUpdate={updateRoom} onDelete={deleteRoom} />}
           {view === 'tenants' && <TenantsView query={query} />}
+          {view === 'tenant-create' && <TenantCreateForm rooms={rooms} />}
           {view === 'invoices' && <InvoicesView query={query} />}
           {view === 'finance' && <FinanceView />}
           {view === 'maintenance' && <MaintenanceView />}

@@ -14,8 +14,8 @@ function SelectGroup(props: React.ComponentProps<typeof SelectPrimitive.Group>) 
   return <SelectPrimitive.Group data-slot='select-group' {...props} />;
 }
 
-function SelectValue(props: React.ComponentProps<typeof SelectPrimitive.Value>) {
-  return <SelectPrimitive.Value data-slot='select-value' {...props} />;
+function SelectValue({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Value>) {
+  return <SelectPrimitive.Value data-slot='select-value' className={cn('min-w-0 truncate', className)} {...props} />;
 }
 
 function SelectTrigger({ className, children, ...props }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
@@ -23,7 +23,7 @@ function SelectTrigger({ className, children, ...props }: React.ComponentProps<t
     <SelectPrimitive.Trigger
       data-slot='select-trigger'
       className={cn(
-        'flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-700 outline-none transition data-[placeholder]:text-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 [&>span]:line-clamp-1',
+        'flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-700 outline-none transition data-[placeholder]:text-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400',
         className
       )}
       {...props}
