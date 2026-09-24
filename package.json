@@ -13,14 +13,24 @@
     "db:seed": "bun src/backend/scripts/seed-rooms.ts"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
+    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-popover": "^1.1.23",
+    "@radix-ui/react-radio-group": "^1.4.7",
     "@radix-ui/react-select": "^2.3.7",
+    "@tanstack/react-query": "^5.103.2",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
     "lucide-react": "^1.48.0",
     "mongodb": "^7.6.0",
     "next": "16.3.6",
     "react": "19.2.8",
+    "react-day-picker": "^10.0.1",
     "react-dom": "19.2.8",
-    "tailwind-merge": "^3.7.0"
+    "react-hook-form": "^7.88.0",
+    "tailwind-merge": "^3.7.0",
+    "yup": "^1.7.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
