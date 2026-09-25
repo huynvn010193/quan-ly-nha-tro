@@ -36,6 +36,15 @@ function birthYear(value: unknown) {
   return parsed;
 }
 
+function birthDate(value: unknown) {
+  const rawValue = requiredText(value, 'Ngày sinh');
+  const parsed = new Date(rawValue);
+  const minimum = new Date(Date.UTC(1900, 0, 1));
+  const today = new Date();
+  if (Number.isNaN(parsed.getTime()) || parsed < minimum || parsed > today) throw new TenantValidationError('Ngày sinh không hợp lệ.');
+  return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
+}
+
 function gender(value: unknown): TenantGender {
   if (typeof value !== 'string' || !TENANT_GENDERS.includes(value as TenantGender)) throw new TenantValidationError('Giới tính không hợp lệ.');
   return value as TenantGender;
@@ -61,8 +70,8 @@ function moveInDate(value: unknown) {
 }
 
 function validatePhone(value: unknown) {
-  const phone = requiredText(value, 'Số điện thoại').replace(/\s/g, '');
-  if (!/^(?:\+84|0)\d{9,10}$/.test(phone)) throw new TenantValidationError('Số điện thoại không hợp lệ.');
+  const phone = requiredText(value, 'Số điện thoại');
+  if (!/^\d+$/.test(phone)) throw new TenantValidationError('Số điện thoại chỉ được gồm chữ số.');
   return phone;
 }
 
@@ -75,10 +84,13 @@ function validateCccd(value: unknown) {
 export function validateCreateTenant(payload: unknown): CreateTenantInput {
   if (!isRecord(payload)) throw new TenantValidationError('Dữ liệu người thuê không hợp lệ.');
 
+  const parsedBirthDate = birthDate(payload.birthDate ?? (payload.birthYear ? `${birthYear(payload.birthYear)}-01-01` : undefined));
+
   return {
     fullName: requiredText(payload.fullName, 'Họ và tên'),
     phone: validatePhone(payload.phone),
-    birthYear: birthYear(payload.birthYear),
+    birthDate: parsedBirthDate,
+    birthYear: parsedBirthDate.getUTCFullYear(),
     cccd: validateCccd(payload.cccd),
     gender: gender(payload.gender),
     ethnicity: requiredText(payload.ethnicity, 'Dân tộc'),
@@ -96,7 +108,13 @@ export function validateUpdateTenant(payload: unknown): UpdateTenantInput {
   const output: UpdateTenantInput = {};
   if ('fullName' in payload) output.fullName = requiredText(payload.fullName, 'Họ và tên');
   if ('phone' in payload) output.phone = validatePhone(payload.phone);
-  if ('birthYear' in payload) output.birthYear = birthYear(payload.birthYear);
+  if ('birthDate' in payload) {
+    output.birthDate = birthDate(payload.birthDate);
+    output.birthYear = output.birthDate.getUTCFullYear();
+  } else if ('birthYear' in payload) {
+    output.birthYear = birthYear(payload.birthYear);
+    output.birthDate = birthDate(`${output.birthYear}-01-01`);
+  }
   if ('cccd' in payload) output.cccd = validateCccd(payload.cccd);
   if ('gender' in payload) output.gender = gender(payload.gender);
   if ('ethnicity' in payload) output.ethnicity = requiredText(payload.ethnicity, 'Dân tộc');

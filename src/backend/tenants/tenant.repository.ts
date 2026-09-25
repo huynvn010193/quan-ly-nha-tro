@@ -14,6 +14,7 @@ import type {
 type TenantDocument = {
   fullName: string;
   phone?: string;
+  birthDate?: Date;
   birthYear?: number;
   cccd?: string;
   cccdImages: { front?: string; back?: string };
@@ -103,7 +104,7 @@ function toAttachment(file: File, fileKey: string): TenantAttachment {
 }
 
 function isTenantProfileCompleted(tenant: Partial<TenantDocument>) {
-  return Boolean(tenant.fullName && tenant.phone && tenant.birthYear && tenant.cccd && tenant.gender && tenant.ethnicity);
+  return Boolean(tenant.fullName && tenant.phone && (tenant.birthDate || tenant.birthYear) && tenant.cccd && tenant.gender && tenant.ethnicity);
 }
 
 async function uploadFile(file: File, metadata: Record<string, string>) {
@@ -237,6 +238,7 @@ export async function createTenantWithMembership(
       const tenantDocument: TenantDocument = {
         fullName: input.fullName,
         phone: input.phone,
+        birthDate: input.birthDate,
         birthYear: input.birthYear,
         cccd: input.cccd,
         cccdImages,
@@ -292,7 +294,8 @@ async function hydrateTenants(documents: WithId<TenantDocument>[]): Promise<Tena
       id: document._id.toHexString(),
       fullName: document.fullName,
       phone: document.phone,
-      birthYear: document.birthYear,
+      birthDate: document.birthDate?.toISOString(),
+      birthYear: document.birthDate?.getUTCFullYear() ?? document.birthYear,
       cccd: document.cccd,
       cccdImages: document.cccdImages || {},
       gender: document.gender,

@@ -59,13 +59,14 @@ export function RoomsView({
           </div>
           <span className='rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold text-slate-500'>{filtered.length} phòng</span>
         </div>
-        <Table className='min-w-205 text-left'>
+        <Table className='min-w-235 text-left'>
           <TableHeader>
             <TableRow className='border-b border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400 hover:bg-slate-50/70'>
               <TableHead className='px-6 py-3.5 font-semibold'>Phòng</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Người thuê</TableHead>
               <TableHead className='px-5 py-3.5 text-center font-semibold'>Số người</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Giá thuê</TableHead>
+              <TableHead className='px-5 py-3.5 font-semibold'>Ngày bắt đầu thuê</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Trạng thái</TableHead>
               <TableHead className='w-24 px-5 py-3.5'>
                 <span className='sr-only'>Thao tác</span>
@@ -99,6 +100,9 @@ export function RoomsView({
                 <TableCell className='px-5 py-4'>
                   <p className='font-bold text-emerald-700'>{formatMoney(room.price)}</p>
                   <p className='mt-0.5 text-[10px] text-slate-400'>mỗi tháng</p>
+                </TableCell>
+                <TableCell className='px-5 py-4 font-medium text-slate-500'>
+                  {room.moveInDate ? new Intl.DateTimeFormat('vi-VN').format(new Date(room.moveInDate)) : '—'}
                 </TableCell>
                 <TableCell className='px-5 py-4'>
                   <StatusBadge status={room.status} />

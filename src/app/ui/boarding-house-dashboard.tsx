@@ -338,7 +338,13 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
           {view === 'overview' && <Overview rooms={rooms} />}
           {view === 'rooms' && <RoomsView rooms={rooms} query={query} onUpdate={updateRoom} onDelete={deleteRoom} />}
           {view === 'tenants' && <TenantsView tenants={tenantRecords} query={query} />}
-          {view === 'tenant-create' && <TenantCreateForm rooms={rooms} tenant={tenantDetailQuery.data?.data} />}
+          {view === 'tenant-create' && (
+            <TenantCreateForm
+              key={editingTenantId ? `${editingTenantId}-${tenantDetailQuery.data?.data.updatedAt || 'loading'}` : 'new-tenant'}
+              rooms={rooms}
+              tenant={tenantDetailQuery.data?.data}
+            />
+          )}
           {view === 'invoices' && <InvoicesView query={query} />}
           {view === 'finance' && <FinanceView />}
           {view === 'maintenance' && <MaintenanceView />}
