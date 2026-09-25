@@ -80,6 +80,12 @@ export function validateUpdateRoom(payload: unknown): UpdateRoomInput {
     }
     output.moveInDate = new Date(payload.moveInDate).toISOString();
   }
+  if ('primaryTenantId' in payload) {
+    if (typeof payload.primaryTenantId !== 'string' || !ObjectId.isValid(payload.primaryTenantId)) {
+      throw new RoomValidationError('Chủ phòng được chọn không hợp lệ.');
+    }
+    output.primaryTenantId = payload.primaryTenantId;
+  }
 
   if (Object.keys(output).length === 0) throw new RoomValidationError('Không có thông tin nào để cập nhật.');
   if (output.status === 'Còn trống') {

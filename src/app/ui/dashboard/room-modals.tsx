@@ -77,7 +77,7 @@ export function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClo
           <DialogHeader className='min-w-0 flex-1 pr-9'>
             <DialogTitle>Xóa phòng {room.name}?</DialogTitle>
             <DialogDescription className='mt-1 text-sm leading-6 text-slate-500'>
-              Phòng sẽ bị xóa khỏi hệ thống và không thể khôi phục. Thao tác này không ảnh hưởng đến các phòng khác.
+              Phòng và toàn bộ hồ sơ người đang ở trong phòng sẽ bị xóa vĩnh viễn. Thao tác này không thể khôi phục.
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -89,9 +89,12 @@ export function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClo
             </span>
           </div>
           <div className='mt-2 flex items-center justify-between gap-4'>
-            <span className='text-xs text-slate-400'>Người thuê</span>
-            <span className='text-sm font-medium text-slate-600'>{room.tenant}</span>
+            <span className='text-xs text-slate-400'>Người bị xóa</span>
+            <span className='text-sm font-medium text-rose-600'>{room.people} người</span>
           </div>
+          {room.members?.length ? (
+            <p className='mt-2 text-right text-[10px] leading-4 text-slate-400'>{room.members.map((member) => member.fullName).join(', ')}</p>
+          ) : null}
         </div>
         {error && (
           <p role='alert' className='mt-4 rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-600'>
@@ -117,8 +120,10 @@ export function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClo
 }
 
 export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => void; onSave: (room: Room) => Promise<void> }) {
+  const hasMembers = Boolean(room.members?.length);
   const [name, setName] = useState(room.name);
   const [tenant, setTenant] = useState(room.status === 'Còn trống' ? '' : room.tenant);
+  const [primaryTenantId, setPrimaryTenantId] = useState(room.primaryTenantId || '');
   const [price, setPrice] = useState(formatCurrencyInput(room.price));
   const [status, setStatus] = useState<RoomStatus>(room.status);
   const [moveInDate, setMoveInDate] = useState<Date | undefined>(room.moveInDate ? new Date(room.moveInDate) : new Date());
@@ -128,14 +133,17 @@ export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: 
     if (!name.trim()) return setError('Vui lòng nhập tên phòng.');
     const nextPrice = parseCurrencyInput(price);
     if (!Number.isFinite(nextPrice) || nextPrice <= 0) return setError('Giá thuê phải lớn hơn 0.');
-    if (status !== 'Còn trống' && !tenant.trim()) return setError('Vui lòng nhập tên người thuê.');
+    if (status !== 'Còn trống' && hasMembers && !primaryTenantId) return setError('Vui lòng chọn chủ phòng.');
+    if (status !== 'Còn trống' && !hasMembers && !tenant.trim()) return setError('Vui lòng nhập tên người thuê.');
     if (status !== 'Còn trống' && !moveInDate) return setError('Vui lòng chọn ngày bắt đầu thuê.');
+    const selectedPrimary = room.members?.find((member) => member.tenantId === primaryTenantId);
     try {
       setSaving(true);
       await onSave({
         ...room,
         name: name.trim().toUpperCase(),
-        tenant: status === 'Còn trống' ? 'Chưa có người thuê' : tenant.trim(),
+        tenant: status === 'Còn trống' ? 'Chưa có người thuê' : selectedPrimary?.fullName || tenant.trim(),
+        primaryTenantId: status === 'Còn trống' || !hasMembers ? undefined : primaryTenantId,
         price: nextPrice,
         status,
         people: status === 'Còn trống' ? 0 : Math.max(room.people, 1),
@@ -174,19 +182,47 @@ export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: 
               className='field-input'
             />
           </label>
-          <label className='block'>
-            <span className='field-label'>Người thuê</span>
-            <Input
-              value={tenant}
-              onChange={(event) => {
-                setTenant(event.target.value);
-                setError('');
-              }}
-              disabled={status === 'Còn trống'}
-              placeholder={status === 'Còn trống' ? 'Phòng đang trống' : 'Nhập tên người thuê'}
-              className='field-input disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
-            />
-          </label>
+          <div>
+            <span className='field-label'>{hasMembers ? 'Chủ phòng' : 'Người thuê'}</span>
+            {hasMembers ? (
+              <Select
+                value={primaryTenantId}
+                disabled={status === 'Còn trống'}
+                onValueChange={(value) => {
+                  setPrimaryTenantId(value);
+                  const selectedMember = room.members?.find((member) => member.tenantId === value);
+                  if (selectedMember) {
+                    setTenant(selectedMember.fullName);
+                    setMoveInDate(new Date(selectedMember.moveInDate));
+                  }
+                  setError('');
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder='Chọn chủ phòng' />
+                </SelectTrigger>
+                <SelectContent>
+                  {room.members?.map((member) => (
+                    <SelectItem key={member.tenantId} value={member.tenantId}>
+                      {member.fullName} · {member.role === 'PRIMARY_TENANT' ? 'Chủ phòng hiện tại' : 'Thành viên'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={tenant}
+                onChange={(event) => {
+                  setTenant(event.target.value);
+                  setError('');
+                }}
+                disabled={status === 'Còn trống'}
+                placeholder={status === 'Còn trống' ? 'Phòng đang trống' : 'Nhập tên người thuê'}
+                className='field-input disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
+              />
+            )}
+            {hasMembers && <p className='mt-1.5 text-[10px] text-slate-400'>Khi đổi chủ phòng, chủ phòng hiện tại sẽ chuyển thành Thành viên.</p>}
+          </div>
           <MoveInDateField
             date={moveInDate}
             onChange={(date) => {

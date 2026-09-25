@@ -1,5 +1,5 @@
 import { MongoServerError } from 'mongodb';
-import { addTenant, editTenant, getTenant, getTenantList, getTenantRoomHistory } from './tenant.service';
+import { addTenant, editTenant, getTenant, getTenantList, getTenantRoomHistory, removeMemberTenant } from './tenant.service';
 import { TenantValidationError, validateTenantFiles } from './tenant.validation';
 
 function errorResponse(error: unknown) {
@@ -22,7 +22,9 @@ function errorResponse(error: unknown) {
       ROOM_NOT_FOUND: { message: 'Không tìm thấy phòng.', status: 404 },
       ROOM_MAINTENANCE: { message: 'Không thể xếp người thuê vào phòng đang sửa chữa.', status: 409 },
       ROOM_FULL: { message: 'Phòng đã đủ số người tối đa.', status: 409 },
-      PRIMARY_TENANT_EXISTS: { message: 'Phòng này đã có chủ phòng.', status: 409 }
+      PRIMARY_TENANT_EXISTS: { message: 'Phòng này đã có chủ phòng.', status: 409 },
+      PRIMARY_TENANT_CANNOT_DELETE: { message: 'Không thể xóa Chủ phòng. Vui lòng chuyển quyền chủ phòng trước.', status: 409 },
+      ONLY_ACTIVE_MEMBER_CAN_DELETE: { message: 'Chỉ có thể xóa Thành viên đang thuộc phòng.', status: 409 }
     };
     const businessError = businessErrors[error.message];
     if (businessError) return Response.json({ error: businessError.message }, { status: businessError.status });
@@ -84,6 +86,16 @@ export async function updateTenantHandler(request: Request, id: string) {
 export async function getTenantHistoryHandler(id: string) {
   try {
     return Response.json({ data: await getTenantRoomHistory(id) });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function deleteTenantHandler(id: string) {
+  try {
+    const deleted = await removeMemberTenant(id);
+    if (!deleted) return Response.json({ error: 'Không tìm thấy người thuê.' }, { status: 404 });
+    return new Response(null, { status: 204 });
   } catch (error) {
     return errorResponse(error);
   }

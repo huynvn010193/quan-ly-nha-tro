@@ -17,6 +17,7 @@ import {
   Zap
 } from 'lucide-react';
 import type { Room } from '@/backend/rooms/room.types';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatMoney, StatCard, StatusBadge } from './shared';
 
 const invoices = [
@@ -32,7 +33,7 @@ function RevenueChart() {
   const points = data.map((value, index) => `${index * (100 / 11)},${80 - value}`).join(' ');
 
   return (
-    <div className='mt-5 h-[188px] w-full'>
+    <div className='mt-5 h-47 w-full'>
       <svg
         viewBox='-4 0 108 88'
         preserveAspectRatio='none'
@@ -75,39 +76,37 @@ function RevenueChart() {
 
 function RoomTable({ rooms }: { rooms: Room[] }) {
   return (
-    <div className='overflow-x-auto'>
-      <table className='min-w-[650px] w-full text-left'>
-        <thead>
-          <tr className='border-y border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400'>
-            <th className='px-6 py-3 font-semibold'>Phòng</th>
-            <th className='px-4 py-3 font-semibold'>Người thuê</th>
-            <th className='px-4 py-3 font-semibold'>Giá thuê</th>
-            <th className='px-4 py-3 font-semibold'>Trạng thái</th>
-            <th className='px-5 py-3' />
-          </tr>
-        </thead>
-        <tbody>
-          {rooms.map((room) => (
-            <tr key={room.id} className='border-b border-slate-50 text-[12px] last:border-0 hover:bg-slate-50/60'>
-              <td className='px-6 py-3.5'>
-                <p className='font-bold text-slate-800'>{room.name}</p>
-                <p className='mt-0.5 text-[10px] text-slate-400'>{room.floor}</p>
-              </td>
-              <td className='px-4 py-3.5 text-slate-600'>{room.tenant}</td>
-              <td className='px-4 py-3.5 font-semibold text-slate-700'>{formatMoney(room.price)}</td>
-              <td className='px-4 py-3.5'>
-                <StatusBadge status={room.status} />
-              </td>
-              <td className='px-5 py-3.5'>
-                <button aria-label={`Tùy chọn ${room.name}`} className='text-slate-400 hover:text-slate-700'>
-                  <MoreHorizontal size={18} />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table className='min-w-162.5 text-left'>
+      <TableHeader>
+        <TableRow className='border-y border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400 hover:bg-slate-50/70'>
+          <TableHead className='px-6 py-3 font-semibold'>Phòng</TableHead>
+          <TableHead className='px-4 py-3 font-semibold'>Người thuê</TableHead>
+          <TableHead className='px-4 py-3 font-semibold'>Giá thuê</TableHead>
+          <TableHead className='px-4 py-3 font-semibold'>Trạng thái</TableHead>
+          <TableHead className='px-5 py-3' />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rooms.map((room) => (
+          <TableRow key={room.id} className='border-b border-slate-50 text-[12px] last:border-0 hover:bg-slate-50/60'>
+            <TableCell className='px-6 py-3.5'>
+              <p className='font-bold text-slate-800'>{room.name}</p>
+              <p className='mt-0.5 text-[10px] text-slate-400'>{room.floor}</p>
+            </TableCell>
+            <TableCell className='px-4 py-3.5 text-slate-600'>{room.tenant}</TableCell>
+            <TableCell className='px-4 py-3.5 font-semibold text-slate-700'>{formatMoney(room.price)}</TableCell>
+            <TableCell className='px-4 py-3.5'>
+              <StatusBadge status={room.status} />
+            </TableCell>
+            <TableCell className='px-5 py-3.5'>
+              <button aria-label={`Tùy chọn ${room.name}`} className='text-slate-400 hover:text-slate-700'>
+                <MoreHorizontal size={18} />
+              </button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
@@ -227,9 +226,9 @@ export function Overview({ rooms }: { rooms: Room[] }) {
             <h2 className='section-title'>Tỷ lệ lấp đầy</h2>
             <p className='section-subtitle'>Cập nhật tháng 09/2025</p>
           </div>
-          <div className='flex h-[185px] items-center justify-center'>
+          <div className='flex h-46.25 items-center justify-center'>
             <div className='relative grid size-36 place-items-center rounded-full bg-[conic-gradient(#17875c_0_75%,#e9eee9_75%_100%)]'>
-              <div className='grid size-[106px] place-items-center rounded-full bg-white text-center shadow-[inset_0_0_0_1px_#f1f3f1]'>
+              <div className='grid size-26.5 place-items-center rounded-full bg-white text-center shadow-[inset_0_0_0_1px_#f1f3f1]'>
                 <div>
                   <p className='text-3xl font-bold tracking-tight text-slate-900'>75%</p>
                   <p className='text-[11px] text-slate-400'>đã lấp đầy</p>
@@ -278,41 +277,39 @@ export function InvoicesView({ query }: { query: string }) {
         <StatCard icon={CalendarDays} label='Chờ thu' value='8,1tr' note='2 hóa đơn' tone='orange' />
       </div>
       <div className='card overflow-hidden'>
-        <div className='overflow-x-auto'>
-          <table className='min-w-[760px] w-full text-left'>
-            <thead>
-              <tr className='border-b border-slate-100 bg-slate-50/60 text-[11px] uppercase tracking-wider text-slate-400'>
-                <th className='px-6 py-4'>Mã hóa đơn</th>
-                <th className='px-5 py-4'>Phòng & người thuê</th>
-                <th className='px-5 py-4'>Ngày tạo</th>
-                <th className='px-5 py-4'>Số tiền</th>
-                <th className='px-5 py-4'>Trạng thái</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((invoice) => (
-                <tr key={invoice.id} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/70'>
-                  <td className='px-6 py-4 font-semibold text-slate-700'>{invoice.id}</td>
-                  <td className='px-5 py-4'>
-                    <p className='font-semibold text-slate-800'>{invoice.room}</p>
-                    <p className='mt-0.5 text-xs text-slate-400'>{invoice.tenant}</p>
-                  </td>
-                  <td className='px-5 py-4 text-slate-500'>{invoice.date}</td>
-                  <td className='px-5 py-4 font-bold text-slate-700'>{formatMoney(invoice.amount)}</td>
-                  <td className='px-5 py-4'>
-                    <StatusBadge status={invoice.status} />
-                  </td>
-                  <td className='px-5'>
-                    <button aria-label='Tùy chọn'>
-                      <MoreHorizontal size={18} className='text-slate-400' />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table className='min-w-190 text-left'>
+          <TableHeader>
+            <TableRow className='border-b border-slate-100 bg-slate-50/60 text-[11px] uppercase tracking-wider text-slate-400 hover:bg-slate-50/60'>
+              <TableHead className='px-6 py-4'>Mã hóa đơn</TableHead>
+              <TableHead className='px-5 py-4'>Phòng & người thuê</TableHead>
+              <TableHead className='px-5 py-4'>Ngày tạo</TableHead>
+              <TableHead className='px-5 py-4'>Số tiền</TableHead>
+              <TableHead className='px-5 py-4'>Trạng thái</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.map((invoice) => (
+              <TableRow key={invoice.id} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/70'>
+                <TableCell className='px-6 py-4 font-semibold text-slate-700'>{invoice.id}</TableCell>
+                <TableCell className='px-5 py-4'>
+                  <p className='font-semibold text-slate-800'>{invoice.room}</p>
+                  <p className='mt-0.5 text-xs text-slate-400'>{invoice.tenant}</p>
+                </TableCell>
+                <TableCell className='px-5 py-4 text-slate-500'>{invoice.date}</TableCell>
+                <TableCell className='px-5 py-4 font-bold text-slate-700'>{formatMoney(invoice.amount)}</TableCell>
+                <TableCell className='px-5 py-4'>
+                  <StatusBadge status={invoice.status} />
+                </TableCell>
+                <TableCell className='px-5'>
+                  <button aria-label='Tùy chọn'>
+                    <MoreHorizontal size={18} className='text-slate-400' />
+                  </button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

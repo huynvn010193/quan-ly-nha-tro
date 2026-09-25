@@ -1,5 +1,6 @@
 import {
   createTenantWithMembership,
+  deleteMemberTenant,
   deleteTenantFiles,
   getRoomMemberHistory,
   getTenantById,
@@ -48,4 +49,8 @@ export async function editTenant(id: string, payload: unknown, files?: TenantUpl
 
 export async function getTenantRoomHistory(id: string) {
   return getRoomMemberHistory(id);
+}
+
+export async function removeMemberTenant(id: string) {
+  return deleteMemberTenant(id);
 }

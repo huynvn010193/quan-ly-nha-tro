@@ -9,7 +9,13 @@ function errorResponse(error: unknown) {
     return Response.json({ error: 'Không tìm thấy người thuê đã chọn.' }, { status: 404 });
   }
   if (error instanceof Error && error.message === 'ROOM_HAS_ACTIVE_MEMBERS') {
-    return Response.json({ error: 'Không thể chuyển hoặc xóa phòng đang có người thuê sang trạng thái trống.' }, { status: 409 });
+    return Response.json({ error: 'Không thể chuyển phòng đang có người thuê sang trạng thái trống.' }, { status: 409 });
+  }
+  if (error instanceof Error && error.message === 'TENANT_NOT_IN_ROOM') {
+    return Response.json({ error: 'Người thuê được chọn không thuộc phòng này.' }, { status: 409 });
+  }
+  if (error instanceof Error && error.message === 'TENANT_NAME_REQUIRED') {
+    return Response.json({ error: 'Vui lòng nhập tên người thuê khi chuyển phòng sang trạng thái đang thuê.' }, { status: 400 });
   }
 
   console.error('Room API error:', error instanceof Error ? error.message : 'Unknown error');

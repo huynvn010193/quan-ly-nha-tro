@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import { TrendingUp } from 'lucide-react';
 import type { RoomStatus } from '@/backend/rooms/room.types';
+import { Badge } from '@/components/ui/badge';
 
 export function formatMoney(value: number) {
   return new Intl.NumberFormat('vi-VN').format(value) + 'đ';
@@ -17,14 +18,14 @@ export function parseCurrencyInput(value: string) {
 }
 
 export function StatusBadge({ status }: { status: RoomStatus | string }) {
-  const styles =
+  const variant =
     status === 'Đang thuê' || status === 'Đã thanh toán' || status === 'Đã xử lý' || status === 'Đang hiệu lực'
-      ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+      ? 'success'
       : status === 'Còn trống' || status === 'Chờ thanh toán' || status === 'Đang xử lý'
-        ? 'bg-amber-50 text-amber-700 border-amber-100'
-        : 'bg-rose-50 text-rose-700 border-rose-100';
+        ? 'warning'
+        : 'destructive';
 
-  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold ${styles}`}>{status}</span>;
+  return <Badge variant={variant}>{status}</Badge>;
 }
 
 export function StatCard({
