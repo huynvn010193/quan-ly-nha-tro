@@ -16,6 +16,7 @@ Dashboard quản lý nhà trọ bằng Next.js 16, TypeScript và Tailwind CSS 4
 
 ```bash
 bun install
+bun run db:setup
 bun run db:seed
 bun dev
 ```
@@ -47,4 +48,13 @@ API quản lý phòng:
 - `PATCH /api/rooms/:id`: cập nhật phòng
 - `DELETE /api/rooms/:id`: xóa phòng
 
-Chạy `bun run db:seed` để tạo indexes và thêm dữ liệu phòng mẫu. Script sẽ không chèn lại nếu collection đã có dữ liệu.
+API quản lý người thuê và quan hệ phòng:
+
+- `GET /api/tenants`: danh sách người thuê và phòng hiện tại
+- `POST /api/tenants`: tạo người thuê, tải file và phân vào phòng
+- `GET /api/tenants/:id`: chi tiết người thuê
+- `PATCH /api/tenants/:id`: cập nhật thông tin hoặc chuyển phòng
+- `GET /api/tenants/:id/room-history`: lịch sử cư trú
+- `GET /api/files/:id`: đọc ảnh CCCD hoặc file đính kèm từ GridFS
+
+Chạy `bun run db:setup` để tạo collections và indexes. MongoDB bảo đảm mỗi người chỉ thuộc một phòng tại một thời điểm và mỗi phòng chỉ có một chủ phòng hiện tại. Chạy `bun run db:seed` nếu cần thêm dữ liệu phòng mẫu; script sẽ không chèn lại khi collection đã có dữ liệu.

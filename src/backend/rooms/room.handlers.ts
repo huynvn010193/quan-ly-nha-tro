@@ -5,6 +5,12 @@ import { RoomValidationError } from './room.validation';
 function errorResponse(error: unknown) {
   if (error instanceof RoomValidationError) return Response.json({ error: error.message }, { status: 400 });
   if (error instanceof MongoServerError && error.code === 11000) return Response.json({ error: 'Tên phòng đã tồn tại.' }, { status: 409 });
+  if (error instanceof Error && error.message === 'TENANT_NOT_FOUND') {
+    return Response.json({ error: 'Không tìm thấy người thuê đã chọn.' }, { status: 404 });
+  }
+  if (error instanceof Error && error.message === 'ROOM_HAS_ACTIVE_MEMBERS') {
+    return Response.json({ error: 'Không thể chuyển hoặc xóa phòng đang có người thuê sang trạng thái trống.' }, { status: 409 });
+  }
 
   console.error('Room API error:', error instanceof Error ? error.message : 'Unknown error');
   return Response.json({ error: 'Không thể xử lý yêu cầu. Vui lòng thử lại.' }, { status: 500 });
