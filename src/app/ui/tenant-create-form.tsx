@@ -47,11 +47,7 @@ const tenantSchema = yup.object({
     .max(new Date(), 'Ngày sinh không được lớn hơn ngày hiện tại.')
     .required('Vui lòng chọn ngày sinh.'),
   gender: yup.string().required('Vui lòng chọn giới tính.'),
-  phone: yup
-    .string()
-    .trim()
-    .matches(/^(?:\+84|0)[0-9 ]{8,11}$/, 'Số điện thoại không hợp lệ.')
-    .required('Vui lòng nhập số điện thoại.'),
+  phone: yup.string().trim().matches(/^\d+$/, 'Số điện thoại chỉ được gồm chữ số.').required('Vui lòng nhập số điện thoại.'),
   citizenId: yup
     .string()
     .matches(/^\d{12}$/, 'Số CCCD phải gồm đúng 12 chữ số.')
@@ -72,7 +68,7 @@ function getInitialValues(tenant?: Tenant): DefaultValues<TenantFormValues> {
   const genderMap: Partial<Record<TenantGender, string>> = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' };
   return {
     fullName: tenant?.fullName || '',
-    birthDate: tenant?.birthYear ? new Date(tenant.birthYear, 0, 1) : undefined,
+    birthDate: tenant?.birthDate ? new Date(tenant.birthDate) : tenant?.birthYear ? new Date(tenant.birthYear, 0, 1) : undefined,
     gender: tenant?.gender ? genderMap[tenant.gender] : '',
     phone: tenant?.phone || '',
     citizenId: tenant?.cccd || '',
@@ -126,6 +122,11 @@ function FieldLabel({ children, required }: { children: ReactNode; required?: bo
 
 function FieldError({ message }: { message?: string }) {
   return message ? <p className='mt-1.5 text-[10px] font-semibold text-rose-500'>{message}</p> : null;
+}
+
+function moveBirthDateToMonth(currentDate: Date, month: Date) {
+  const lastDayOfMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  return new Date(month.getFullYear(), month.getMonth(), Math.min(currentDate.getDate(), lastDayOfMonth));
 }
 
 function UploadBox({
@@ -283,7 +284,7 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
       const requestPayload: Record<string, unknown> = {
         fullName: formValues.fullName,
         phone: formValues.phone,
-        birthYear: formValues.birthDate.getFullYear(),
+        birthDate: format(formValues.birthDate, 'yyyy-MM-dd'),
         cccd: formValues.citizenId,
         gender: genderMap[formValues.gender],
         ethnicity: formValues.ethnicity,
@@ -306,7 +307,9 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
       if (!response.ok || !payload.data) throw new Error(payload.error || 'Không thể lưu người thuê.');
       return payload.data;
     },
-    onSuccess: async () => {
+    onSuccess: async (savedTenant) => {
+      await queryClient.cancelQueries({ queryKey: ['tenant', savedTenant.id], exact: true });
+      queryClient.setQueryData(['tenant', savedTenant.id], { data: savedTenant });
       await Promise.all([queryClient.invalidateQueries({ queryKey: ['tenants'] }), queryClient.invalidateQueries({ queryKey: ['rooms'] })]);
       router.push('/manager-tenant');
     }
@@ -370,6 +373,7 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
                         }
                       }}
                       defaultMonth={values.birthDate ?? new Date(1995, 0, 1)}
+                      onMonthChange={(month) => updateField('birthDate', moveBirthDateToMonth(values.birthDate ?? new Date(1995, 0, 1), month))}
                       startMonth={new Date(1900, 0, 1)}
                       endMonth={new Date()}
                       disabled={{ after: new Date() }}
@@ -405,7 +409,7 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
                 <Phone className='pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400' />
                 <Input
                   value={values.phone}
-                  onChange={(event) => updateField('phone', event.target.value.replace(/[^\d+ ]/g, ''))}
+                  onChange={(event) => updateField('phone', event.target.value.replace(/\D/g, ''))}
                   placeholder='Ví dụ: 0987654321'
                   inputMode='tel'
                   className='pl-10'

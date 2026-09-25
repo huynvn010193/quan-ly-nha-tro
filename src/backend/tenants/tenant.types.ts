@@ -15,6 +15,7 @@ export type Tenant = {
   id: string;
   fullName: string;
   phone?: string;
+  birthDate?: string;
   birthYear?: number;
   cccd?: string;
   cccdImages: {
@@ -42,6 +43,7 @@ export type Tenant = {
 export type CreateTenantInput = {
   fullName: string;
   phone: string;
+  birthDate: Date;
   birthYear: number;
   cccd: string;
   gender: TenantGender;
@@ -56,6 +58,7 @@ export type CreateTenantInput = {
 export type UpdateTenantInput = Partial<
   Pick<Tenant, 'fullName' | 'phone' | 'birthYear' | 'cccd' | 'gender' | 'ethnicity' | 'permanentAddress' | 'temporaryAddress'>
 > & {
+  birthDate?: Date;
   roomId?: string;
   role?: RoomMemberRole;
   moveInDate?: Date;
