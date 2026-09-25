@@ -1,6 +1,7 @@
 'use client';
 
 import { yupResolver } from '@hookform/resolvers/yup';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import {
   ArrowLeft,
@@ -22,18 +23,21 @@ import {
   X
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { vi } from 'react-day-picker/locale';
 import { useForm, useWatch, type DefaultValues, type FieldPath, type FieldPathValue } from 'react-hook-form';
 import { useId, useState, type DragEvent, type ReactNode } from 'react';
 import * as yup from 'yup';
 
 import type { Room } from '@/backend/rooms/room.types';
+import type { RoomMemberRole, Tenant, TenantGender } from '@/backend/tenants/tenant.types';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Spinner } from '@/components/ui/spinner';
 
 const tenantSchema = yup.object({
   fullName: yup.string().trim().required('Vui lòng nhập họ và tên.'),
@@ -53,32 +57,35 @@ const tenantSchema = yup.object({
     .matches(/^\d{12}$/, 'Số CCCD phải gồm đúng 12 chữ số.')
     .required('Vui lòng nhập số CCCD.'),
   ethnicity: yup.string().required('Vui lòng chọn dân tộc.'),
-  permanentAddress: yup.string().trim().required('Vui lòng nhập địa chỉ thường trú.'),
-  temporaryAddress: yup.string().trim().required('Vui lòng nhập địa chỉ tạm trú.'),
+  permanentAddress: yup.string().trim().default(''),
+  temporaryAddress: yup.string().trim().default(''),
   roomId: yup.string().required('Vui lòng chọn phòng.'),
   role: yup.mixed<'owner' | 'member'>().oneOf(['owner', 'member']).required('Vui lòng chọn vai trò trong phòng.'),
-  citizenIdFront: yup.array().of(yup.mixed<File>().required()).min(1, 'Vui lòng tải lên mặt trước CCCD.').required(),
-  citizenIdBack: yup.array().of(yup.mixed<File>().required()).min(1, 'Vui lòng tải lên mặt sau CCCD.').required(),
+  citizenIdFront: yup.array().of(yup.mixed<File>().required()).default([]),
+  citizenIdBack: yup.array().of(yup.mixed<File>().required()).default([]),
   attachments: yup.array().of(yup.mixed<File>().required()).default([])
 });
 
 type TenantFormValues = yup.InferType<typeof tenantSchema>;
 
-const initialValues: DefaultValues<TenantFormValues> = {
-  fullName: '',
-  birthDate: undefined,
-  gender: '',
-  phone: '',
-  citizenId: '',
-  ethnicity: '',
-  permanentAddress: '',
-  temporaryAddress: '',
-  roomId: '',
-  role: 'member',
-  citizenIdFront: [],
-  citizenIdBack: [],
-  attachments: []
-};
+function getInitialValues(tenant?: Tenant): DefaultValues<TenantFormValues> {
+  const genderMap: Partial<Record<TenantGender, string>> = { MALE: 'Nam', FEMALE: 'Nữ', OTHER: 'Khác' };
+  return {
+    fullName: tenant?.fullName || '',
+    birthDate: tenant?.birthYear ? new Date(tenant.birthYear, 0, 1) : undefined,
+    gender: tenant?.gender ? genderMap[tenant.gender] : '',
+    phone: tenant?.phone || '',
+    citizenId: tenant?.cccd || '',
+    ethnicity: tenant?.ethnicity || '',
+    permanentAddress: tenant?.permanentAddress || '',
+    temporaryAddress: tenant?.temporaryAddress || '',
+    roomId: tenant?.activeRoom?.roomId || '',
+    role: tenant?.activeRoom?.role === 'PRIMARY_TENANT' ? 'owner' : 'member',
+    citizenIdFront: [],
+    citizenIdBack: [],
+    attachments: []
+  };
+}
 
 function FormSection({
   icon: Icon,
@@ -202,7 +209,9 @@ function UploadBox({
   );
 }
 
-export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
+export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Tenant }) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [birthDateOpen, setBirthDateOpen] = useState(false);
   const [message, setMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
   const {
@@ -212,7 +221,7 @@ export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
     formState: { errors }
   } = useForm<TenantFormValues>({
     resolver: yupResolver(tenantSchema),
-    defaultValues: initialValues,
+    defaultValues: getInitialValues(tenant),
     mode: 'onBlur'
   });
   const values = useWatch({ control }) as TenantFormValues;
@@ -222,8 +231,51 @@ export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
     setMessage(null);
   }
 
-  const submit = () => {
-    setMessage({ type: 'success', text: 'Thông tin đã hợp lệ và sẵn sàng để lưu khi API người thuê được kết nối.' });
+  const saveTenantMutation = useMutation({
+    mutationFn: async (formValues: TenantFormValues) => {
+      const genderMap: Record<string, TenantGender> = { Nam: 'MALE', Nữ: 'FEMALE', Khác: 'OTHER' };
+      const roleMap: Record<TenantFormValues['role'], RoomMemberRole> = { owner: 'PRIMARY_TENANT', member: 'MEMBER' };
+      const nextRole = roleMap[formValues.role];
+      const assignmentChanged = !tenant || tenant.activeRoom?.roomId !== formValues.roomId || tenant.activeRoom?.role !== nextRole;
+      const requestPayload: Record<string, unknown> = {
+        fullName: formValues.fullName,
+        phone: formValues.phone,
+        birthYear: formValues.birthDate.getFullYear(),
+        cccd: formValues.citizenId,
+        gender: genderMap[formValues.gender],
+        ethnicity: formValues.ethnicity,
+        permanentAddress: formValues.permanentAddress,
+        temporaryAddress: formValues.temporaryAddress
+      };
+      if (assignmentChanged) {
+        requestPayload.roomId = formValues.roomId;
+        requestPayload.role = nextRole;
+        requestPayload.moveInDate = new Date().toISOString();
+      }
+      const formData = new FormData();
+      formData.set('payload', JSON.stringify(requestPayload));
+      if (formValues.citizenIdFront[0]) formData.set('citizenIdFront', formValues.citizenIdFront[0]);
+      if (formValues.citizenIdBack[0]) formData.set('citizenIdBack', formValues.citizenIdBack[0]);
+      formValues.attachments.forEach((file) => formData.append('attachments', file));
+
+      const response = await fetch(tenant ? `/api/tenants/${tenant.id}` : '/api/tenants', { method: tenant ? 'PATCH' : 'POST', body: formData });
+      const payload = (await response.json()) as { data?: Tenant; error?: string };
+      if (!response.ok || !payload.data) throw new Error(payload.error || 'Không thể lưu người thuê.');
+      return payload.data;
+    },
+    onSuccess: async () => {
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ['tenants'] }), queryClient.invalidateQueries({ queryKey: ['rooms'] })]);
+      router.push('/manager-tenant');
+    }
+  });
+
+  const submit = async (formValues: TenantFormValues) => {
+    setMessage(null);
+    try {
+      await saveTenantMutation.mutateAsync(formValues);
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Không thể lưu người thuê.' });
+    }
   };
 
   return (
@@ -413,7 +465,6 @@ export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
               <div>
                 <UploadBox
                   label='Mặt trước CCCD'
-                  required
                   files={values.citizenIdFront}
                   accept='image/jpeg,image/png,image/webp'
                   onFiles={(files) => updateField('citizenIdFront', files.slice(0, 1))}
@@ -423,7 +474,6 @@ export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
               <div>
                 <UploadBox
                   label='Mặt sau CCCD'
-                  required
                   files={values.citizenIdBack}
                   accept='image/jpeg,image/png,image/webp'
                   onFiles={(files) => updateField('citizenIdBack', files.slice(0, 1))}
@@ -435,7 +485,7 @@ export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
 
           <FormSection icon={MapPin} number={3} title='Địa chỉ cư trú'>
             <label className='block'>
-              <FieldLabel required>Địa chỉ thường trú</FieldLabel>
+              <FieldLabel>Địa chỉ thường trú</FieldLabel>
               <div className='relative'>
                 <Home className='pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400' />
                 <Input
@@ -448,7 +498,7 @@ export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
               <FieldError message={errors.permanentAddress?.message} />
             </label>
             <label className='block'>
-              <FieldLabel required>Địa chỉ tạm trú</FieldLabel>
+              <FieldLabel>Địa chỉ tạm trú</FieldLabel>
               <div className='relative'>
                 <FileText className='pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400' />
                 <Input
@@ -494,8 +544,9 @@ export function TenantCreateForm({ rooms }: { rooms: Room[] }) {
         >
           <ArrowLeft className='size-4' /> Hủy
         </Link>
-        <Button type='submit' className='px-5'>
-          <Save className='size-4' /> Lưu người thuê
+        <Button type='submit' className='px-5' disabled={saveTenantMutation.isPending}>
+          {saveTenantMutation.isPending ? <Spinner /> : <Save className='size-4' />}
+          {saveTenantMutation.isPending ? 'Đang lưu...' : tenant ? 'Lưu thông tin' : 'Lưu người thuê'}
         </Button>
       </div>
     </form>

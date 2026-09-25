@@ -1,0 +1,153 @@
+'use client';
+
+import { ChevronDown, ChevronUp, MoreHorizontal, Pencil } from 'lucide-react';
+import Link from 'next/link';
+import { useState } from 'react';
+import type { Tenant } from '@/backend/tenants/tenant.types';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { StatusBadge } from './shared';
+
+export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: string }) {
+  const [expandedRoomIds, setExpandedRoomIds] = useState<Set<string>>(() => new Set());
+  const search = query.trim().toLowerCase();
+  const tenantGroups = new Map<string, Tenant[]>();
+
+  for (const tenant of tenants) {
+    const groupId = tenant.activeRoom?.roomId || `unassigned-${tenant.id}`;
+    tenantGroups.set(groupId, [...(tenantGroups.get(groupId) || []), tenant]);
+  }
+
+  const roomGroups = Array.from(tenantGroups.entries())
+    .map(([roomId, groupTenants]) => {
+      const sortedTenants = [...groupTenants].sort((left, right) => {
+        const leftOrder = left.activeRoom?.role === 'PRIMARY_TENANT' ? 0 : 1;
+        const rightOrder = right.activeRoom?.role === 'PRIMARY_TENANT' ? 0 : 1;
+        return leftOrder - rightOrder || left.fullName.localeCompare(right.fullName, 'vi');
+      });
+      return { roomId, tenants: sortedTenants };
+    })
+    .filter(
+      ({ tenants: groupTenants }) =>
+        !search ||
+        groupTenants.some((tenant) =>
+          `${tenant.fullName} ${tenant.activeRoom?.roomNumber || ''} ${tenant.phone || ''} ${tenant.cccd || ''}`.toLowerCase().includes(search)
+        )
+    );
+
+  const initials = (name: string) =>
+    name
+      .split(/\s+/)
+      .slice(-2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase();
+
+  return (
+    <div className='card overflow-hidden'>
+      <div className='overflow-x-auto'>
+        <table className='min-w-[840px] w-full text-left'>
+          <thead>
+            <tr className='border-b border-slate-100 bg-slate-50/60 text-[11px] uppercase tracking-wider text-slate-400'>
+              <th className='px-6 py-4'>Người thuê</th>
+              <th className='px-5 py-4'>Phòng</th>
+              <th className='px-5 py-4'>Vai trò</th>
+              <th className='px-5 py-4'>Số điện thoại</th>
+              <th className='px-5 py-4'>Ngày vào ở</th>
+              <th className='px-5 py-4'>Hợp đồng</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {roomGroups.flatMap((roomGroup) => {
+              const primaryTenant = roomGroup.tenants.find((tenant) => tenant.activeRoom?.role === 'PRIMARY_TENANT') || roomGroup.tenants[0];
+              const canCollapse = roomGroup.tenants.length > 1;
+              const isExpanded = Boolean(search) || expandedRoomIds.has(roomGroup.roomId);
+              const visibleTenants = canCollapse && !isExpanded ? [primaryTenant] : roomGroup.tenants;
+
+              return visibleTenants.map((tenant) => (
+                <tr key={tenant.id} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/70'>
+                  <td className='px-6 py-4'>
+                    <div className='flex items-center gap-3'>
+                      <span className='grid size-9 place-items-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-700'>
+                        {initials(tenant.fullName)}
+                      </span>
+                      <div>
+                        <span className='font-semibold text-slate-800'>{tenant.fullName}</span>
+                        {!tenant.profileCompleted && (
+                          <span className='ml-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-bold text-amber-700'>
+                            Thiếu thông tin
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td className='px-5 py-4'>
+                    <p className='font-semibold text-slate-600'>{tenant.activeRoom?.roomNumber || 'Chưa phân phòng'}</p>
+                    {canCollapse && tenant.id === primaryTenant.id && (
+                      <button
+                        type='button'
+                        onClick={() =>
+                          setExpandedRoomIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(roomGroup.roomId)) next.delete(roomGroup.roomId);
+                            else next.add(roomGroup.roomId);
+                            return next;
+                          })
+                        }
+                        className='mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 hover:text-emerald-800'
+                        aria-expanded={isExpanded}
+                      >
+                        {isExpanded ? 'Thu gọn' : `${roomGroup.tenants.length - 1} thành viên`}
+                        {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      </button>
+                    )}
+                  </td>
+                  <td className='px-5 py-4'>
+                    {tenant.activeRoom ? (
+                      <span className='inline-flex rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700'>
+                        {tenant.activeRoom.role === 'PRIMARY_TENANT' ? 'Chủ phòng' : 'Thành viên'}
+                      </span>
+                    ) : (
+                      <span className='text-slate-400'>—</span>
+                    )}
+                  </td>
+                  <td className='px-5 py-4 text-slate-500'>{tenant.phone || 'Chưa bổ sung'}</td>
+                  <td className='px-5 py-4 text-slate-500'>
+                    {tenant.activeRoom ? new Intl.DateTimeFormat('vi-VN').format(new Date(tenant.activeRoom.moveInDate)) : '—'}
+                  </td>
+                  <td className='px-5 py-4'>
+                    <StatusBadge status={tenant.activeRoom ? 'Đang hiệu lực' : 'Đã chuyển đi'} />
+                  </td>
+                  <td className='px-5'>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type='button'
+                          aria-label={`Thao tác với ${tenant.fullName}`}
+                          className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-emerald-700 hover:shadow-sm'
+                        >
+                          <MoreHorizontal size={18} />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align='end'>
+                        <DropdownMenuItem asChild>
+                          <Link href={`/manager-tenant/${tenant.id}/edit`}>
+                            <Pencil />
+                            Chỉnh sửa
+                          </Link>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              ));
+            })}
+          </tbody>
+        </table>
+      </div>
+      {roomGroups.length === 0 && (
+        <div className='border-t border-slate-100 py-14 text-center text-sm text-slate-400'>Chưa có người thuê phù hợp.</div>
+      )}
+    </div>
+  );
+}

@@ -10,11 +10,13 @@
     "lint": "eslint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:seed": "bun src/backend/scripts/seed-rooms.ts"
+    "db:seed": "bun src/backend/scripts/seed-rooms.ts",
+    "db:setup": "bun src/backend/scripts/setup-database.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
     "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@radix-ui/react-popover": "^1.1.23",
     "@radix-ui/react-radio-group": "^1.4.7",
     "@radix-ui/react-select": "^2.3.7",

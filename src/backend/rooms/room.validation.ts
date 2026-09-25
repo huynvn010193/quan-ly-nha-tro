@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 import { ROOM_STATUSES, type CreateRoomInput, type RoomStatus, type UpdateRoomInput } from './room.types';
 
 export class RoomValidationError extends Error {
@@ -39,6 +40,16 @@ export function validateCreateRoom(payload: unknown): CreateRoomInput {
   const status = roomStatus(payload.status);
   const tenant = status === 'Còn trống' ? 'Chưa có người thuê' : requiredText(payload.tenant, 'Người thuê');
   const people = status === 'Còn trống' ? 0 : nonNegativeInteger(payload.people, 'Số người');
+  const primaryTenantId = typeof payload.primaryTenantId === 'string' && payload.primaryTenantId.trim() ? payload.primaryTenantId.trim() : undefined;
+  const primaryTenantName =
+    typeof payload.primaryTenantName === 'string' && payload.primaryTenantName.trim() ? payload.primaryTenantName.trim() : undefined;
+  const moveInDate = typeof payload.moveInDate === 'string' && payload.moveInDate.trim() ? new Date(payload.moveInDate) : undefined;
+  if (primaryTenantId && !ObjectId.isValid(primaryTenantId)) throw new RoomValidationError('Người thuê không hợp lệ.');
+  if (status !== 'Còn trống' && !primaryTenantId && !primaryTenantName) throw new RoomValidationError('Vui lòng nhập tên chủ phòng.');
+  if (status !== 'Còn trống' && (!moveInDate || Number.isNaN(moveInDate.getTime()))) {
+    throw new RoomValidationError('Ngày bắt đầu thuê không hợp lệ.');
+  }
+  if (status === 'Còn trống' && (primaryTenantId || primaryTenantName)) throw new RoomValidationError('Phòng trống không thể có chủ phòng.');
 
   return {
     name: requiredText(payload.name, 'Tên phòng').toUpperCase(),
@@ -46,7 +57,10 @@ export function validateCreateRoom(payload: unknown): CreateRoomInput {
     tenant,
     price: positiveNumber(payload.price, 'Giá thuê'),
     status,
-    people
+    people,
+    primaryTenantId,
+    primaryTenantName,
+    moveInDate: moveInDate?.toISOString()
   };
 }
 
@@ -60,6 +74,12 @@ export function validateUpdateRoom(payload: unknown): UpdateRoomInput {
   if ('price' in payload) output.price = positiveNumber(payload.price, 'Giá thuê');
   if ('people' in payload) output.people = nonNegativeInteger(payload.people, 'Số người');
   if ('status' in payload) output.status = roomStatus(payload.status);
+  if ('moveInDate' in payload) {
+    if (typeof payload.moveInDate !== 'string' || Number.isNaN(new Date(payload.moveInDate).getTime())) {
+      throw new RoomValidationError('Ngày bắt đầu thuê không hợp lệ.');
+    }
+    output.moveInDate = new Date(payload.moveInDate).toISOString();
+  }
 
   if (Object.keys(output).length === 0) throw new RoomValidationError('Không có thông tin nào để cập nhật.');
   if (output.status === 'Còn trống') {

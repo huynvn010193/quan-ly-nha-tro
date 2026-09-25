@@ -14,7 +14,7 @@ function getMongoConfig() {
   return { uri, databaseName };
 }
 
-function getClientPromise() {
+export function getMongoClient() {
   if (!globalThis.__boardingHouseMongoClientPromise) {
     const { uri } = getMongoConfig();
     const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10000 });
@@ -26,6 +26,6 @@ function getClientPromise() {
 
 export async function getDatabase(): Promise<Db> {
   const { databaseName } = getMongoConfig();
-  const client = await getClientPromise();
+  const client = await getMongoClient();
   return client.db(databaseName);
 }

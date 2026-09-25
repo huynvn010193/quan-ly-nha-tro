@@ -10,12 +10,16 @@ export type Room = {
   price: number;
   status: RoomStatus;
   people: number;
+  moveInDate?: string;
   createdAt?: string;
   updatedAt?: string;
 };
 
-export type CreateRoomInput = Omit<Room, 'id' | 'createdAt' | 'updatedAt'>;
-export type UpdateRoomInput = Partial<CreateRoomInput>;
+export type CreateRoomInput = Omit<Room, 'id' | 'createdAt' | 'updatedAt'> & {
+  primaryTenantId?: string;
+  primaryTenantName?: string;
+};
+export type UpdateRoomInput = Partial<Omit<CreateRoomInput, 'primaryTenantId' | 'primaryTenantName'>>;
 
 export type RoomListResult = {
   data: Room[];
