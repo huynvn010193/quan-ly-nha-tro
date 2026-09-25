@@ -12,7 +12,6 @@ import {
   CreditCard,
   FileText,
   Home,
-  ImageIcon,
   MapPin,
   Paperclip,
   Phone,
@@ -23,10 +22,11 @@ import {
   X
 } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { vi } from 'react-day-picker/locale';
 import { useForm, useWatch, type DefaultValues, type FieldPath, type FieldPathValue } from 'react-hook-form';
-import { useId, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type DragEvent, type ReactNode } from 'react';
 import * as yup from 'yup';
 
 import type { Room } from '@/backend/rooms/room.types';
@@ -132,6 +132,7 @@ function UploadBox({
   label,
   required,
   files,
+  existingFileUrl,
   accept,
   multiple,
   onFiles
@@ -139,11 +140,24 @@ function UploadBox({
   label: string;
   required?: boolean;
   files: File[];
+  existingFileUrl?: string;
   accept: string;
   multiple?: boolean;
   onFiles: (files: File[]) => void;
 }) {
   const inputId = useId();
+  const selectedPreviewUrl = useMemo(() => {
+    const selectedFile = files[0];
+    return selectedFile?.type.startsWith('image/') ? URL.createObjectURL(selectedFile) : undefined;
+  }, [files]);
+  const previewUrl = selectedPreviewUrl || (files.length === 0 ? existingFileUrl : undefined);
+
+  useEffect(
+    () => () => {
+      if (selectedPreviewUrl) URL.revokeObjectURL(selectedPreviewUrl);
+    },
+    [selectedPreviewUrl]
+  );
 
   const receiveFiles = (incoming: FileList | null) => {
     if (!incoming) return;
@@ -172,10 +186,39 @@ function UploadBox({
           className='sr-only'
           onChange={(event) => receiveFiles(event.target.files)}
         />
-        {files.length ? (
+        {previewUrl ? (
+          <>
+            <div className='relative h-28 w-full overflow-hidden rounded-lg border border-slate-200 bg-white'>
+              <Image
+                src={previewUrl}
+                alt={selectedPreviewUrl ? `${label} vừa chọn` : `${label} đã tải lên`}
+                fill
+                unoptimized
+                sizes='(max-width: 640px) 100vw, 320px'
+                className='object-contain'
+              />
+              <span className='absolute bottom-1.5 left-1.5 rounded-md bg-slate-900/70 px-2 py-1 text-[9px] font-semibold text-white'>
+                {selectedPreviewUrl ? 'Ảnh vừa chọn' : 'Ảnh đã tải lên'}
+              </span>
+            </div>
+            <p className='mt-2 text-[10px] font-medium text-slate-500'>{selectedPreviewUrl ? files[0].name : 'Nhấn để thay ảnh'}</p>
+            {selectedPreviewUrl && (
+              <button
+                type='button'
+                onClick={(event) => {
+                  event.preventDefault();
+                  onFiles([]);
+                }}
+                className='mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-500 hover:text-rose-600'
+              >
+                <X className='size-3.5' /> Hủy thay ảnh
+              </button>
+            )}
+          </>
+        ) : files.length ? (
           <>
             <span className='grid size-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700'>
-              <ImageIcon className='size-5' />
+              <CloudUpload className='size-5' />
             </span>
             <div className='mt-3 max-w-full space-y-1'>
               {files.map((file) => (
@@ -192,7 +235,7 @@ function UploadBox({
               }}
               className='mt-3 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-500 hover:text-rose-600'
             >
-              <X className='size-3.5' /> Xóa file
+              <X className='size-3.5' /> Hủy thay ảnh
             </button>
           </>
         ) : (
@@ -439,14 +482,14 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
                 onValueChange={(value) => updateField('role', value as TenantFormValues['role'])}
                 className='grid sm:grid-cols-2'
               >
-                <label className='flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3.5 transition has-[[data-state=checked]]:border-emerald-400 has-[[data-state=checked]]:bg-emerald-50/60'>
+                <label className='flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3.5 transition has-data-[state=checked]:border-emerald-400 has-data-[state=checked]:bg-emerald-50/60'>
                   <RadioGroupItem value='owner' className='mt-0.5' />
                   <span>
                     <span className='block text-xs font-bold text-slate-700'>Chủ phòng</span>
                     <span className='mt-1 block text-[10px] text-slate-400'>Người đại diện chính, chịu trách nhiệm phòng</span>
                   </span>
                 </label>
-                <label className='flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3.5 transition has-[[data-state=checked]]:border-emerald-400 has-[[data-state=checked]]:bg-emerald-50/60'>
+                <label className='flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3.5 transition has-data-[state=checked]:border-emerald-400 has-data-[state=checked]:bg-emerald-50/60'>
                   <RadioGroupItem value='member' className='mt-0.5' />
                   <span>
                     <span className='block text-xs font-bold text-slate-700'>Thành viên</span>
@@ -466,6 +509,7 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
                 <UploadBox
                   label='Mặt trước CCCD'
                   files={values.citizenIdFront}
+                  existingFileUrl={tenant?.cccdImages.front ? `/api/files/${tenant.cccdImages.front}` : undefined}
                   accept='image/jpeg,image/png,image/webp'
                   onFiles={(files) => updateField('citizenIdFront', files.slice(0, 1))}
                 />
@@ -475,6 +519,7 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
                 <UploadBox
                   label='Mặt sau CCCD'
                   files={values.citizenIdBack}
+                  existingFileUrl={tenant?.cccdImages.back ? `/api/files/${tenant.cccdImages.back}` : undefined}
                   accept='image/jpeg,image/png,image/webp'
                   onFiles={(files) => updateField('citizenIdBack', files.slice(0, 1))}
                 />

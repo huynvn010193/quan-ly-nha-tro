@@ -101,7 +101,6 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
     enabled: Boolean(editingTenantId)
   });
 
-  const refreshRooms = () => queryClient.invalidateQueries({ queryKey: roomsQueryKey });
   const refreshRoomsAndTenants = () =>
     Promise.all([queryClient.invalidateQueries({ queryKey: roomsQueryKey }), queryClient.invalidateQueries({ queryKey: tenantsQueryKey })]);
   const createRoomMutation = useMutation({
@@ -120,14 +119,15 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
           price: room.price,
           status: room.status,
           people: room.people,
+          primaryTenantId: room.primaryTenantId,
           moveInDate: room.moveInDate
         })
       }),
-    onSuccess: refreshRooms
+    onSuccess: refreshRoomsAndTenants
   });
   const deleteRoomMutation = useMutation({
     mutationFn: (room: Room) => apiRequest<void>(`/api/rooms/${room.id}`, { method: 'DELETE' }),
-    onSuccess: refreshRooms
+    onSuccess: refreshRoomsAndTenants
   });
 
   const rooms = roomsQuery.data?.data ?? [];
@@ -169,7 +169,7 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
         <button className='fixed inset-0 z-30 bg-slate-950/30 lg:hidden' aria-label='Đóng menu' onClick={() => setSidebarOpen(false)} />
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[250px] flex-col border-r border-[#e6eae6] bg-white px-4 py-5 transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`fixed inset-y-0 left-0 z-40 flex w-62.5 flex-col border-r border-[#e6eae6] bg-white px-4 py-5 transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
         <div className='flex items-center gap-3 px-2'>
           <span className='grid size-10 place-items-center rounded-xl bg-[#167d57] text-white shadow-[0_6px_16px_rgba(22,125,87,.25)]'>
@@ -229,8 +229,8 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
           </div>
         </div>
       </aside>
-      <div className='lg:pl-[250px]'>
-        <header className='sticky top-0 z-20 flex h-[70px] items-center justify-between border-b border-[#e7ebe7] bg-white/90 px-4 backdrop-blur-xl sm:px-7 lg:px-9'>
+      <div className='lg:pl-62.5'>
+        <header className='sticky top-0 z-20 flex h-17.5 items-center justify-between border-b border-[#e7ebe7] bg-white/90 px-4 backdrop-blur-xl sm:px-7 lg:px-9'>
           <div className='flex items-center gap-3 lg:hidden'>
             <button
               onClick={() => setSidebarOpen(true)}
@@ -243,7 +243,7 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
               Nhà Trọ <b className='text-emerald-700'>365</b>
             </span>
           </div>
-          <div className='relative hidden w-full max-w-[340px] md:block'>
+          <div className='relative hidden w-full max-w-85 md:block'>
             <Search size={16} className='absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400' />
             <Input
               value={query}

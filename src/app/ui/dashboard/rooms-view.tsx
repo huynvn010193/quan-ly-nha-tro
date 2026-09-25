@@ -3,6 +3,7 @@
 import { ChevronLeft, ChevronRight, DoorOpen, Pencil, Trash2, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import type { Room, RoomStatus } from '@/backend/rooms/room.types';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DeleteRoomModal, EditRoomModal } from './room-modals';
 import { formatMoney, StatusBadge } from './shared';
 
@@ -58,76 +59,74 @@ export function RoomsView({
           </div>
           <span className='rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold text-slate-500'>{filtered.length} phòng</span>
         </div>
-        <div className='overflow-x-auto'>
-          <table className='w-full min-w-[820px] text-left'>
-            <thead>
-              <tr className='border-b border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400'>
-                <th className='px-6 py-3.5 font-semibold'>Phòng</th>
-                <th className='px-5 py-3.5 font-semibold'>Người thuê</th>
-                <th className='px-5 py-3.5 text-center font-semibold'>Số người</th>
-                <th className='px-5 py-3.5 font-semibold'>Giá thuê</th>
-                <th className='px-5 py-3.5 font-semibold'>Trạng thái</th>
-                <th className='w-24 px-5 py-3.5'>
-                  <span className='sr-only'>Thao tác</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {pagedRooms.map((room) => (
-                <tr key={room.id} className='group border-b border-slate-100 text-[13px] last:border-0 hover:bg-[#f8fbf9]'>
-                  <td className='px-6 py-4'>
-                    <div className='flex items-center gap-3'>
-                      <span className='grid size-10 shrink-0 place-items-center rounded-xl bg-[#edf5ef] text-[#267359]'>
-                        <DoorOpen size={18} />
-                      </span>
-                      <div>
-                        <p className='font-bold text-slate-800'>{room.name}</p>
-                        <p className='mt-0.5 text-[11px] text-slate-400'>{room.floor}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className='px-5 py-4'>
-                    <p className={room.people === 0 ? 'text-slate-400' : 'font-medium text-slate-600'}>{room.tenant}</p>
-                    <p className='mt-0.5 text-[10px] text-slate-400'>{room.people === 0 ? 'Sẵn sàng cho thuê' : 'Hợp đồng đang hiệu lực'}</p>
-                  </td>
-                  <td className='px-5 py-4 text-center'>
-                    <span className='inline-flex items-center gap-1.5 font-semibold text-slate-600'>
-                      <UsersRound size={14} />
-                      {room.people}
+        <Table className='min-w-205 text-left'>
+          <TableHeader>
+            <TableRow className='border-b border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400 hover:bg-slate-50/70'>
+              <TableHead className='px-6 py-3.5 font-semibold'>Phòng</TableHead>
+              <TableHead className='px-5 py-3.5 font-semibold'>Người thuê</TableHead>
+              <TableHead className='px-5 py-3.5 text-center font-semibold'>Số người</TableHead>
+              <TableHead className='px-5 py-3.5 font-semibold'>Giá thuê</TableHead>
+              <TableHead className='px-5 py-3.5 font-semibold'>Trạng thái</TableHead>
+              <TableHead className='w-24 px-5 py-3.5'>
+                <span className='sr-only'>Thao tác</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pagedRooms.map((room) => (
+              <TableRow key={room.id} className='group border-b border-slate-100 text-[13px] last:border-0 hover:bg-[#f8fbf9]'>
+                <TableCell className='px-6 py-4'>
+                  <div className='flex items-center gap-3'>
+                    <span className='grid size-10 shrink-0 place-items-center rounded-xl bg-[#edf5ef] text-[#267359]'>
+                      <DoorOpen size={18} />
                     </span>
-                  </td>
-                  <td className='px-5 py-4'>
-                    <p className='font-bold text-emerald-700'>{formatMoney(room.price)}</p>
-                    <p className='mt-0.5 text-[10px] text-slate-400'>mỗi tháng</p>
-                  </td>
-                  <td className='px-5 py-4'>
-                    <StatusBadge status={room.status} />
-                  </td>
-                  <td className='px-5 py-4'>
-                    <div className='flex items-center gap-1'>
-                      <button
-                        onClick={() => setEditingRoom(room)}
-                        aria-label={`Chỉnh sửa ${room.name}`}
-                        title={`Chỉnh sửa ${room.name}`}
-                        className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-emerald-700 hover:shadow-sm'
-                      >
-                        <Pencil size={16} />
-                      </button>
-                      <button
-                        onClick={() => setDeletingRoom(room)}
-                        aria-label={`Xóa ${room.name}`}
-                        title={`Xóa ${room.name}`}
-                        className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600'
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                    <div>
+                      <p className='font-bold text-slate-800'>{room.name}</p>
+                      <p className='mt-0.5 text-[11px] text-slate-400'>{room.floor}</p>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </div>
+                </TableCell>
+                <TableCell className='px-5 py-4'>
+                  <p className={room.people === 0 ? 'text-slate-400' : 'font-medium text-slate-600'}>{room.tenant}</p>
+                  <p className='mt-0.5 text-[10px] text-slate-400'>{room.people === 0 ? 'Sẵn sàng cho thuê' : 'Hợp đồng đang hiệu lực'}</p>
+                </TableCell>
+                <TableCell className='px-5 py-4 text-center'>
+                  <span className='inline-flex items-center gap-1.5 font-semibold text-slate-600'>
+                    <UsersRound size={14} />
+                    {room.people}
+                  </span>
+                </TableCell>
+                <TableCell className='px-5 py-4'>
+                  <p className='font-bold text-emerald-700'>{formatMoney(room.price)}</p>
+                  <p className='mt-0.5 text-[10px] text-slate-400'>mỗi tháng</p>
+                </TableCell>
+                <TableCell className='px-5 py-4'>
+                  <StatusBadge status={room.status} />
+                </TableCell>
+                <TableCell className='px-5 py-4'>
+                  <div className='flex items-center gap-1'>
+                    <button
+                      onClick={() => setEditingRoom(room)}
+                      aria-label={`Chỉnh sửa ${room.name}`}
+                      title={`Chỉnh sửa ${room.name}`}
+                      className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-emerald-700 hover:shadow-sm'
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => setDeletingRoom(room)}
+                      aria-label={`Xóa ${room.name}`}
+                      title={`Xóa ${room.name}`}
+                      className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600'
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
         {filtered.length === 0 && (
           <div className='border-t border-slate-100 py-16 text-center text-sm text-slate-400'>Không tìm thấy phòng phù hợp.</div>
         )}

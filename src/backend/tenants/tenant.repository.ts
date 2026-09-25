@@ -421,6 +421,41 @@ export async function updateTenantWithMembership(
   return found ? getTenantById(id) : null;
 }
 
+export async function deleteMemberTenant(id: string): Promise<boolean> {
+  if (!ObjectId.isValid(id)) return false;
+  const { tenants, roomMembers } = await getCollections();
+  const client = await getMongoClient();
+  const session = client.startSession();
+  const tenantId = new ObjectId(id);
+  const fileKeys: string[] = [];
+  let deleted = false;
+
+  try {
+    await session.withTransaction(async () => {
+      const tenant = await tenants.findOne({ _id: tenantId }, { session });
+      if (!tenant) return;
+
+      const activeMembership = await roomMembers.findOne({ tenantId, isActive: true }, { session });
+      if (activeMembership?.role === 'PRIMARY_TENANT') throw new Error('PRIMARY_TENANT_CANNOT_DELETE');
+      if (!activeMembership || activeMembership.role !== 'MEMBER') throw new Error('ONLY_ACTIVE_MEMBER_CAN_DELETE');
+
+      if (tenant.cccdImages.front) fileKeys.push(tenant.cccdImages.front);
+      if (tenant.cccdImages.back) fileKeys.push(tenant.cccdImages.back);
+      fileKeys.push(...tenant.attachments.map((attachment) => attachment.fileKey));
+
+      await roomMembers.deleteMany({ tenantId }, { session });
+      await tenants.deleteOne({ _id: tenantId }, { session });
+      await syncRoomSummary(activeMembership.roomId, session);
+      deleted = true;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (deleted) await deleteTenantFiles(fileKeys);
+  return deleted;
+}
+
 export async function getRoomMemberHistory(tenantId: string) {
   if (!ObjectId.isValid(tenantId)) return [];
   const { roomMembers, rooms } = await getCollections();

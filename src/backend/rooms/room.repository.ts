@@ -1,5 +1,6 @@
 import { ObjectId, type ClientSession, type Collection, type Db, type Filter, type WithId } from 'mongodb';
 import { getDatabase, getMongoClient } from '@/backend/database/mongodb';
+import { deleteTenantFiles } from '@/backend/tenants/tenant.repository';
 import type { CreateRoomInput, Room, RoomListResult, RoomStatus, UpdateRoomInput } from './room.types';
 
 type RoomDocument = Omit<CreateRoomInput, 'primaryTenantId' | 'primaryTenantName' | 'moveInDate'> & {
@@ -19,7 +20,13 @@ type RoomMemberDocument = {
   updatedAt: Date;
 };
 
-type RoomSummary = { tenant: string; people: number; moveInDate?: Date };
+type RoomSummary = {
+  tenant: string;
+  people: number;
+  primaryTenantId?: string;
+  members: Room['members'];
+  moveInDate?: Date;
+};
 
 let indexPromise: Promise<string[]> | undefined;
 
@@ -48,6 +55,8 @@ function toRoom(document: WithId<RoomDocument>, summary?: RoomSummary): Room {
     price: document.price,
     status: document.status,
     people: summary?.people ?? document.people,
+    primaryTenantId: summary?.primaryTenantId,
+    members: summary?.members,
     moveInDate: summary?.moveInDate?.toISOString() ?? document.moveInDate?.toISOString(),
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString()
@@ -102,6 +111,13 @@ export async function listRooms(options: { page: number; limit: number; search?:
     summaryByRoom.set(roomId.toHexString(), {
       tenant: tenantById.get(primary.tenantId.toHexString()) || 'Chưa có chủ phòng',
       people: roomMemberships.length,
+      primaryTenantId: primary.tenantId.toHexString(),
+      members: roomMemberships.map((membership) => ({
+        tenantId: membership.tenantId.toHexString(),
+        fullName: tenantById.get(membership.tenantId.toHexString()) || 'Người thuê đã xóa',
+        role: membership.role,
+        moveInDate: membership.moveInDate.toISOString()
+      })),
       moveInDate: primary.moveInDate
     });
   }
@@ -228,29 +244,104 @@ export async function updateRoom(id: string, input: UpdateRoomInput): Promise<Ro
   if (!ObjectId.isValid(id)) return null;
   const collection = await getRoomsCollection();
   const database = await getDatabase();
+  const client = await getMongoClient();
+  const session = client.startSession();
   const roomId = new ObjectId(id);
-  const roomMembers = database.collection<{ roomId: ObjectId; tenantId: ObjectId; role: string; isActive: boolean }>('roomMembers');
-  const activeMembers = await roomMembers.find({ roomId, isActive: true }).toArray();
-  if (activeMembers.length && input.status === 'Còn trống') throw new Error('ROOM_HAS_ACTIVE_MEMBERS');
-  const { moveInDate, ...roomFields } = input;
-  if (roomFields.tenant) {
-    const primary = activeMembers.find((member) => member.role === 'PRIMARY_TENANT');
-    if (primary) {
-      await database.collection('tenants').updateOne({ _id: primary.tenantId }, { $set: { fullName: roomFields.tenant, updatedAt: new Date() } });
-    }
+  let found = false;
+
+  try {
+    await session.withTransaction(async () => {
+      const currentRoom = await collection.findOne({ _id: roomId }, { session });
+      if (!currentRoom) return;
+      found = true;
+
+      const roomMembers = database.collection<RoomMemberDocument>('roomMembers');
+      const activeMembers = await roomMembers.find({ roomId, isActive: true }, { session }).toArray();
+      if (activeMembers.length && input.status === 'Còn trống') throw new Error('ROOM_HAS_ACTIVE_MEMBERS');
+
+      const now = new Date();
+      const moveInDateValue = input.moveInDate ? new Date(input.moveInDate) : undefined;
+      const nextStatus = input.status ?? currentRoom.status;
+      if (!activeMembers.length && nextStatus !== 'Còn trống') {
+        const tenantName = input.tenant?.trim();
+        if (!tenantName || tenantName === 'Chưa có người thuê') throw new Error('TENANT_NAME_REQUIRED');
+
+        const tenants = database.collection<{
+          fullName: string;
+          cccdImages: Record<string, string>;
+          attachments: unknown[];
+          profileCompleted: boolean;
+          createdAt: Date;
+          updatedAt: Date;
+        }>('tenants');
+        const tenantId = (
+          await tenants.insertOne(
+            {
+              fullName: tenantName,
+              cccdImages: {},
+              attachments: [],
+              profileCompleted: false,
+              createdAt: now,
+              updatedAt: now
+            },
+            { session }
+          )
+        ).insertedId;
+        const membership: RoomMemberDocument = {
+          roomId,
+          tenantId,
+          role: 'PRIMARY_TENANT',
+          moveInDate: moveInDateValue || now,
+          moveOutDate: null,
+          isActive: true,
+          createdAt: now,
+          updatedAt: now
+        };
+        const membershipId = (await roomMembers.insertOne(membership, { session })).insertedId;
+        activeMembers.push({ ...membership, _id: membershipId });
+      }
+
+      let activePrimary = activeMembers.find((member) => member.role === 'PRIMARY_TENANT') || activeMembers[0];
+      if (input.primaryTenantId) {
+        const selectedTenantId = new ObjectId(input.primaryTenantId);
+        const selectedMember = activeMembers.find((member) => member.tenantId.equals(selectedTenantId));
+        if (!selectedMember) throw new Error('TENANT_NOT_IN_ROOM');
+
+        if (!activePrimary || !activePrimary.tenantId.equals(selectedTenantId) || activePrimary.role !== 'PRIMARY_TENANT') {
+          const now = new Date();
+          if (activePrimary?.role === 'PRIMARY_TENANT') {
+            await roomMembers.updateOne({ _id: activePrimary._id }, { $set: { role: 'MEMBER', updatedAt: now } }, { session });
+          }
+          await roomMembers.updateOne({ _id: selectedMember._id }, { $set: { role: 'PRIMARY_TENANT', updatedAt: now } }, { session });
+          activePrimary = { ...selectedMember, role: 'PRIMARY_TENANT', updatedAt: now };
+        }
+      }
+
+      if (moveInDateValue && activePrimary) {
+        await roomMembers.updateOne({ _id: activePrimary._id }, { $set: { moveInDate: moveInDateValue, updatedAt: now } }, { session });
+      }
+      const primaryTenant = activePrimary
+        ? await database.collection<{ fullName: string }>('tenants').findOne({ _id: activePrimary.tenantId }, { session })
+        : null;
+
+      const roomFields: Partial<RoomDocument> = {
+        ...(input.name ? { name: input.name } : {}),
+        ...(input.floor ? { floor: input.floor } : {}),
+        ...(input.price ? { price: input.price } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(moveInDateValue ? { moveInDate: moveInDateValue } : {}),
+        tenant: primaryTenant?.fullName || (activeMembers.length ? 'Chưa có chủ phòng' : input.tenant || currentRoom.tenant),
+        people: activeMembers.length || input.people || 0,
+        updatedAt: now
+      };
+      await collection.updateOne({ _id: roomId }, { $set: roomFields }, { session });
+    });
+  } finally {
+    await session.endSession();
   }
-  const activePrimary = activeMembers.find((member) => member.role === 'PRIMARY_TENANT') || activeMembers[0];
-  const moveInDateValue = moveInDate ? new Date(moveInDate) : undefined;
-  if (moveInDateValue && activePrimary) {
-    await database
-      .collection<RoomMemberDocument>('roomMembers')
-      .updateOne({ roomId, tenantId: activePrimary.tenantId, isActive: true }, { $set: { moveInDate: moveInDateValue, updatedAt: new Date() } });
-  }
-  const result = await collection.findOneAndUpdate(
-    { _id: roomId },
-    { $set: { ...roomFields, ...(moveInDateValue ? { moveInDate: moveInDateValue } : {}), updatedAt: new Date() } },
-    { returnDocument: 'after' }
-  );
+
+  if (!found) return null;
+  const result = await collection.findOne({ _id: roomId });
   return result ? toRoom(result) : null;
 }
 
@@ -258,8 +349,45 @@ export async function deleteRoom(id: string): Promise<boolean> {
   if (!ObjectId.isValid(id)) return false;
   const collection = await getRoomsCollection();
   const database = await getDatabase();
-  const activeMembers = await database.collection('roomMembers').countDocuments({ roomId: new ObjectId(id), isActive: true });
-  if (activeMembers > 0) throw new Error('ROOM_HAS_ACTIVE_MEMBERS');
-  const result = await collection.deleteOne({ _id: new ObjectId(id) });
-  return result.deletedCount === 1;
+  const client = await getMongoClient();
+  const session = client.startSession();
+  const roomId = new ObjectId(id);
+  const fileKeys: string[] = [];
+  let deleted = false;
+
+  try {
+    await session.withTransaction(async () => {
+      const room = await collection.findOne({ _id: roomId }, { session });
+      if (!room) return;
+
+      const roomMembers = database.collection<RoomMemberDocument>('roomMembers');
+      const activeMembers = await roomMembers.find({ roomId, isActive: true }, { session }).toArray();
+      const tenantIds = [...new Map(activeMembers.map((member) => [member.tenantId.toHexString(), member.tenantId])).values()];
+
+      if (tenantIds.length) {
+        const tenants = database.collection<{
+          cccdImages?: { front?: string; back?: string };
+          attachments?: { fileKey: string }[];
+        }>('tenants');
+        const tenantDocuments = await tenants.find({ _id: { $in: tenantIds } }, { session }).toArray();
+        for (const tenant of tenantDocuments) {
+          if (tenant.cccdImages?.front) fileKeys.push(tenant.cccdImages.front);
+          if (tenant.cccdImages?.back) fileKeys.push(tenant.cccdImages.back);
+          fileKeys.push(...(tenant.attachments || []).map((attachment) => attachment.fileKey));
+        }
+
+        await roomMembers.deleteMany({ tenantId: { $in: tenantIds } }, { session });
+        await tenants.deleteMany({ _id: { $in: tenantIds } }, { session });
+      }
+
+      await roomMembers.deleteMany({ roomId }, { session });
+      await collection.deleteOne({ _id: roomId }, { session });
+      deleted = true;
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  if (deleted) await deleteTenantFiles(fileKeys);
+  return deleted;
 }
