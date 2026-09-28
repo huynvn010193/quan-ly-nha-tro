@@ -197,7 +197,6 @@ async function syncRoomSummary(roomId: ObjectId, session: ClientSession) {
       $set: {
         people: activeMembers.length,
         tenant: primaryTenant?.fullName || (activeMembers.length ? 'Chưa có chủ phòng' : 'Chưa có người thuê'),
-        status: activeMembers.length ? 'Đang thuê' : 'Còn trống',
         updatedAt: new Date()
       }
     },

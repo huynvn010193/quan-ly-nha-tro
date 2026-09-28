@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   Settings,
+  ScrollText,
   UserPlus,
   UsersRound,
   WalletCards,
@@ -32,12 +33,13 @@ import type { Tenant, TenantListResult } from '@/backend/tenants/tenant.types';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { AddRoomModal } from './dashboard/room-modals';
+import { ContractsView } from './dashboard/contracts-view';
 import { Overview, InvoicesView, FinanceView, MaintenanceView } from './dashboard/overview-and-operations';
 import { RoomsView } from './dashboard/rooms-view';
 import { TenantsView } from './dashboard/tenants-view';
 import { TenantCreateForm } from './tenant-create-form';
 
-type View = 'overview' | 'rooms' | 'tenants' | 'tenant-create' | 'invoices' | 'finance' | 'maintenance';
+type View = 'overview' | 'rooms' | 'tenants' | 'tenant-create' | 'contracts' | 'invoices' | 'finance' | 'maintenance';
 
 const roomsQueryKey = ['rooms'] as const;
 const tenantsQueryKey = ['tenants'] as const;
@@ -46,6 +48,7 @@ const navItems: { id: View; label: string; icon: LucideIcon; href: string }[] = 
   { id: 'overview', label: 'Tổng quan', icon: LayoutDashboard, href: '/' },
   { id: 'rooms', label: 'Quản lý phòng', icon: DoorOpen, href: '/manager-room' },
   { id: 'tenants', label: 'Người thuê', icon: UsersRound, href: '/manager-tenant' },
+  { id: 'contracts', label: 'Hợp đồng', icon: ScrollText, href: '/manager-contract' },
   { id: 'invoices', label: 'Hóa đơn', icon: FileText, href: '/manager-invoice' },
   { id: 'finance', label: 'Thu & chi', icon: WalletCards, href: '/manager-finance' },
   { id: 'maintenance', label: 'Sự cố & sửa chữa', icon: Wrench, href: '/manager-maintenance' }
@@ -56,6 +59,7 @@ const viewTitles: Record<View, { title: string; subtitle: string }> = {
   rooms: { title: 'Quản lý phòng', subtitle: 'Theo dõi trạng thái và thông tin từng phòng.' },
   tenants: { title: 'Người thuê', subtitle: 'Quản lý hồ sơ và hợp đồng người thuê.' },
   'tenant-create': { title: 'Thêm người thuê', subtitle: 'Nhập thông tin nhân khẩu và phân người thuê vào phòng.' },
+  contracts: { title: 'Quản lý hợp đồng', subtitle: 'Theo dõi thời hạn, tiền cọc và lịch thanh toán hợp đồng.' },
   invoices: { title: 'Hóa đơn', subtitle: 'Kiểm tra và theo dõi thanh toán hàng tháng.' },
   finance: { title: 'Thu & chi', subtitle: 'Nắm rõ dòng tiền và hiệu quả vận hành.' },
   maintenance: { title: 'Sự cố & sửa chữa', subtitle: 'Tiếp nhận và xử lý yêu cầu của người thuê.' }
@@ -69,7 +73,15 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-export function BoardingHouseDashboard({ initialView = 'overview', editingTenantId }: { initialView?: View; editingTenantId?: string }) {
+export function BoardingHouseDashboard({
+  initialView = 'overview',
+  editingTenantId,
+  initialContractRoomId
+}: {
+  initialView?: View;
+  editingTenantId?: string;
+  initialContractRoomId?: string;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [view, setView] = useState<View>(initialView);
@@ -83,7 +95,8 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
         : viewTitles[view],
     [editingTenantId, view]
   );
-  const needsRooms = view === 'overview' || view === 'rooms' || view === 'tenant-create';
+  const needsRooms = view === 'overview' || view === 'rooms' || view === 'tenant-create' || view === 'contracts';
+  const needsTenants = view === 'tenants' || view === 'contracts';
 
   const roomsQuery = useQuery({
     queryKey: roomsQueryKey,
@@ -93,7 +106,7 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
   const tenantsQuery = useQuery({
     queryKey: tenantsQueryKey,
     queryFn: () => apiRequest<TenantListResult>('/api/tenants?limit=100', { cache: 'no-store' }),
-    enabled: view === 'tenants'
+    enabled: needsTenants
   });
   const tenantDetailQuery = useQuery({
     queryKey: ['tenant', editingTenantId],
@@ -119,8 +132,7 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
           price: room.price,
           status: room.status,
           people: room.people,
-          primaryTenantId: room.primaryTenantId,
-          moveInDate: room.moveInDate
+          primaryTenantId: room.primaryTenantId
         })
       }),
     onSuccess: refreshRoomsAndTenants
@@ -147,7 +159,7 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
     await deleteRoomMutation.mutateAsync(room);
   };
 
-  if (roomsQuery.isLoading || (view === 'tenants' && tenantsQuery.isLoading) || tenantDetailQuery.isLoading) {
+  if (roomsQuery.isLoading || (needsTenants && tenantsQuery.isLoading) || tenantDetailQuery.isLoading) {
     return (
       <div className='grid min-h-screen place-items-center bg-[#f5f7f5] px-4'>
         <div role='status' className='flex flex-col items-center gap-3 text-center'>
@@ -248,7 +260,7 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
             <Input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder='Tìm phòng, người thuê, hóa đơn...'
+              placeholder='Tìm phòng, người thuê, hợp đồng...'
               className='h-10 w-full rounded-xl border border-slate-200 bg-[#f8faf8] pl-10 pr-4 text-xs outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10'
             />
           </div>
@@ -322,7 +334,7 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
               </button>
             </div>
           )}
-          {tenantsError && view === 'tenants' && (
+          {tenantsError && needsTenants && (
             <div className='mb-5 flex items-center justify-between gap-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-700'>
               <span>{tenantsError}</span>
               <button onClick={() => void tenantsQuery.refetch()} className='font-bold hover:underline'>
@@ -338,6 +350,9 @@ export function BoardingHouseDashboard({ initialView = 'overview', editingTenant
           {view === 'overview' && <Overview rooms={rooms} />}
           {view === 'rooms' && <RoomsView rooms={rooms} query={query} onUpdate={updateRoom} onDelete={deleteRoom} />}
           {view === 'tenants' && <TenantsView tenants={tenantRecords} query={query} />}
+          {view === 'contracts' && (
+            <ContractsView rooms={rooms} tenants={tenantRecords} query={query} initialRoomId={initialContractRoomId} />
+          )}
           {view === 'tenant-create' && (
             <TenantCreateForm
               key={editingTenantId ? `${editingTenantId}-${tenantDetailQuery.data?.data.updatedAt || 'loading'}` : 'new-tenant'}

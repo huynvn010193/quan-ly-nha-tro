@@ -1,6 +1,22 @@
-export const ROOM_STATUSES = ['Đang thuê', 'Còn trống', 'Sắp trả'] as const;
+export const ROOM_STATUSES = ['AVAILABLE', 'OCCUPIED', 'RESERVED', 'MAINTENANCE'] as const;
 
 export type RoomStatus = (typeof ROOM_STATUSES)[number];
+
+export const ROOM_STATUS_LABELS: Record<RoomStatus, string> = {
+  AVAILABLE: 'Phòng trống',
+  OCCUPIED: 'Đang thuê',
+  RESERVED: 'Đã đặt',
+  MAINTENANCE: 'Bảo trì'
+};
+
+export type CreateRoomContractInput = {
+  status: 'PENDING' | 'ACTIVE';
+  startDate: string;
+  endDate?: string | null;
+  depositAmount: number;
+  billingDay: number;
+  note?: string;
+};
 
 export type RoomMemberSummary = {
   tenantId: string;
@@ -27,8 +43,9 @@ export type Room = {
 export type CreateRoomInput = Omit<Room, 'id' | 'createdAt' | 'updatedAt' | 'primaryTenantId' | 'members'> & {
   primaryTenantId?: string;
   primaryTenantName?: string;
+  contract?: CreateRoomContractInput;
 };
-export type UpdateRoomInput = Partial<Omit<CreateRoomInput, 'primaryTenantName'>>;
+export type UpdateRoomInput = Partial<Omit<CreateRoomInput, 'primaryTenantName' | 'contract'>>;
 
 export type RoomListResult = {
   data: Room[];

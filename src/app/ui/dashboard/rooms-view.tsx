@@ -1,11 +1,20 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, DoorOpen, Pencil, Trash2, UsersRound } from 'lucide-react';
+import { ChevronLeft, ChevronRight, DoorOpen, FilePenLine, FilePlus2, Pencil, Trash2, UsersRound } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 import type { Room, RoomStatus } from '@/backend/rooms/room.types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DeleteRoomModal, EditRoomModal } from './room-modals';
-import { formatMoney, StatusBadge } from './shared';
+import { formatMoney, roomStatusLabel, StatusBadge } from './shared';
+
+const roomFilters: { value: 'Tất cả phòng' | RoomStatus; label: string }[] = [
+  { value: 'Tất cả phòng', label: 'Tất cả phòng' },
+  { value: 'AVAILABLE', label: 'Phòng trống' },
+  { value: 'OCCUPIED', label: 'Đang thuê' },
+  { value: 'RESERVED', label: 'Đã đặt' },
+  { value: 'MAINTENANCE', label: 'Bảo trì' }
+];
 
 export function RoomsView({
   rooms,
@@ -26,7 +35,7 @@ export function RoomsView({
   const filtered = rooms.filter(
     (room) =>
       (status === 'Tất cả phòng' || room.status === status) &&
-      `${room.name} ${room.tenant} ${room.status}`.toLowerCase().includes(query.toLowerCase())
+      `${room.name} ${room.tenant} ${room.status} ${roomStatusLabel(room.status)}`.toLowerCase().includes(query.toLowerCase())
   );
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -35,17 +44,17 @@ export function RoomsView({
   return (
     <>
       <div className='mb-5 flex flex-wrap gap-3'>
-        {(['Tất cả phòng', 'Đang thuê', 'Còn trống', 'Sắp trả'] as const).map((label, index) => (
+        {roomFilters.map((filter, index) => (
           <button
-            key={label}
+            key={filter.value}
             onClick={() => {
-              setStatus(label);
+              setStatus(filter.value);
               setPage(1);
             }}
-            className={status === label ? 'filter-chip-active' : 'filter-chip'}
+            className={status === filter.value ? 'filter-chip-active' : 'filter-chip'}
           >
-            {label}
-            {index > 0 && <span>{rooms.filter((room) => room.status === label).length}</span>}
+            {filter.label}
+            {index > 0 && <span>{rooms.filter((room) => room.status === filter.value).length}</span>}
           </button>
         ))}
       </div>
@@ -68,7 +77,7 @@ export function RoomsView({
               <TableHead className='px-5 py-3.5 font-semibold'>Giá thuê</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Ngày bắt đầu thuê</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Trạng thái</TableHead>
-              <TableHead className='w-24 px-5 py-3.5'>
+              <TableHead className='w-52 px-5 py-3.5'>
                 <span className='sr-only'>Thao tác</span>
               </TableHead>
             </TableRow>
@@ -89,7 +98,15 @@ export function RoomsView({
                 </TableCell>
                 <TableCell className='px-5 py-4'>
                   <p className={room.people === 0 ? 'text-slate-400' : 'font-medium text-slate-600'}>{room.tenant}</p>
-                  <p className='mt-0.5 text-[10px] text-slate-400'>{room.people === 0 ? 'Sẵn sàng cho thuê' : 'Hợp đồng đang hiệu lực'}</p>
+                  <p className='mt-0.5 text-[10px] text-slate-400'>
+                    {room.status === 'OCCUPIED'
+                      ? 'Hợp đồng đang hiệu lực'
+                      : room.status === 'RESERVED'
+                        ? 'Hợp đồng chờ hiệu lực'
+                        : room.status === 'MAINTENANCE'
+                          ? 'Tạm ngưng cho thuê'
+                          : 'Sẵn sàng cho thuê'}
+                  </p>
                 </TableCell>
                 <TableCell className='px-5 py-4 text-center'>
                   <span className='inline-flex items-center gap-1.5 font-semibold text-slate-600'>
@@ -109,6 +126,15 @@ export function RoomsView({
                 </TableCell>
                 <TableCell className='px-5 py-4'>
                   <div className='flex items-center gap-1'>
+                    <Link
+                      href={`/manager-contract?roomId=${room.id}`}
+                      aria-label={`${room.moveInDate ? 'Sửa' : 'Tạo'} hợp đồng cho ${room.name}`}
+                      title={`${room.moveInDate ? 'Sửa' : 'Tạo'} hợp đồng cho ${room.name}`}
+                      className='inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10px] font-semibold text-slate-500 transition hover:bg-blue-50 hover:text-blue-700'
+                    >
+                      {room.moveInDate ? <FilePenLine size={15} /> : <FilePlus2 size={15} />}
+                      <span className='hidden xl:inline'>{room.moveInDate ? 'Sửa hợp đồng' : 'Tạo hợp đồng'}</span>
+                    </Link>
                     <button
                       onClick={() => setEditingRoom(room)}
                       aria-label={`Chỉnh sửa ${room.name}`}

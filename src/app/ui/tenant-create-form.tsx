@@ -29,7 +29,7 @@ import { useForm, useWatch, type DefaultValues, type FieldPath, type FieldPathVa
 import { useEffect, useId, useMemo, useState, type DragEvent, type ReactNode } from 'react';
 import * as yup from 'yup';
 
-import type { Room } from '@/backend/rooms/room.types';
+import { ROOM_STATUS_LABELS, type Room } from '@/backend/rooms/room.types';
 import type { RoomMemberRole, Tenant, TenantGender } from '@/backend/tenants/tenant.types';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
@@ -470,7 +470,7 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
                 <SelectContent>
                   {rooms.map((room) => (
                     <SelectItem key={room.id} value={room.id}>
-                      {room.name} · {room.floor} · {room.status}
+                      {room.name} · {room.floor} · {ROOM_STATUS_LABELS[room.status]}
                     </SelectItem>
                   ))}
                 </SelectContent>

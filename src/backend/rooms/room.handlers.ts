@@ -17,6 +17,12 @@ function errorResponse(error: unknown) {
   if (error instanceof Error && error.message === 'TENANT_NAME_REQUIRED') {
     return Response.json({ error: 'Vui lòng nhập tên người thuê khi chuyển phòng sang trạng thái đang thuê.' }, { status: 400 });
   }
+  if (error instanceof Error && error.message === 'ROOM_HAS_CURRENT_CONTRACT') {
+    return Response.json({ error: 'Hãy kết thúc hoặc hủy hợp đồng hiện tại trước khi chuyển phòng sang Bảo trì.' }, { status: 409 });
+  }
+  if (error instanceof Error && error.message === 'ROOM_STATUS_MANAGED_BY_CONTRACT') {
+    return Response.json({ error: 'Trạng thái Đang thuê và Đã đặt được tự động quản lý theo hợp đồng.' }, { status: 409 });
+  }
 
   console.error('Room API error:', error instanceof Error ? error.message : 'Unknown error');
   return Response.json({ error: 'Không thể xử lý yêu cầu. Vui lòng thử lại.' }, { status: 500 });

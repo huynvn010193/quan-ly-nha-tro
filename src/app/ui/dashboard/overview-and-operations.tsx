@@ -28,6 +28,14 @@ const invoices = [
   { id: 'HD-0925-05', room: 'P.203', tenant: 'Vũ Khánh Linh', amount: 4260000, date: '02/09/2025', status: 'Đã thanh toán' }
 ];
 
+const monthlyPaymentItems = [
+  { label: 'Tiền phòng', amount: 3500000 },
+  { label: 'Điện', amount: 420000 },
+  { label: 'Nước', amount: 200000 },
+  { label: 'Internet', amount: 100000 },
+  { label: 'Phát sinh', amount: 100000 }
+];
+
 function RevenueChart() {
   const data = [24, 34, 29, 42, 51, 45, 58, 54, 69, 62, 76, 72];
   const points = data.map((value, index) => `${index * (100 / 11)},${80 - value}`).join(' ');
@@ -188,14 +196,14 @@ export function Overview({ rooms }: { rooms: Room[] }) {
         <StatCard
           icon={UsersRound}
           label='Phòng đang thuê'
-          value={`${rooms.filter((room) => room.status !== 'Còn trống').length}`}
+          value={`${rooms.filter((room) => room.status === 'OCCUPIED').length}`}
           note='Tỷ lệ lấp đầy 75%'
           tone='blue'
         />
         <StatCard
           icon={DoorOpen}
           label='Phòng còn trống'
-          value={`${rooms.filter((room) => room.status === 'Còn trống').length}`}
+          value={`${rooms.filter((room) => room.status === 'AVAILABLE').length}`}
           note='Sẵn sàng cho thuê'
           tone='orange'
         />
@@ -238,9 +246,9 @@ export function Overview({ rooms }: { rooms: Room[] }) {
           </div>
           <div className='grid grid-cols-3 gap-2 border-t border-slate-100 pt-4 text-center'>
             {[
-              ['6', 'Đang thuê', 'text-slate-800'],
-              ['2', 'Còn trống', 'text-amber-600'],
-              ['1', 'Sắp trả', 'text-rose-500']
+              [`${rooms.filter((room) => room.status === 'OCCUPIED').length}`, 'Đang thuê', 'text-blue-600'],
+              [`${rooms.filter((room) => room.status === 'AVAILABLE').length}`, 'Phòng trống', 'text-emerald-600'],
+              [`${rooms.filter((room) => room.status === 'RESERVED').length}`, 'Đã đặt', 'text-amber-600']
             ].map(([value, label, color]) => (
               <div key={label}>
                 <p className={`text-lg font-bold ${color}`}>{value}</p>
@@ -267,6 +275,48 @@ export function Overview({ rooms }: { rooms: Room[] }) {
   );
 }
 
+function MonthlyPaymentInvoice() {
+  const total = monthlyPaymentItems.reduce((sum, item) => sum + item.amount, 0);
+
+  return (
+    <article className='card overflow-hidden'>
+      <div className='flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-emerald-50/80 to-white px-5 py-5 sm:px-6'>
+        <div>
+          <p className='text-[10px] font-bold uppercase tracking-[.14em] text-emerald-700'>Nhà trọ Tam Kê</p>
+          <h2 className='mt-1 text-lg font-bold text-slate-900'>Hóa đơn thanh toán tháng 09/2026</h2>
+          <p className='mt-1 text-xs text-slate-500'>Phòng 1 · Nguyễn Văn An</p>
+        </div>
+        <div className='rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-right'>
+          <p className='text-[10px] font-semibold uppercase tracking-wide text-amber-700'>Hạn thanh toán</p>
+          <p className='mt-1 text-sm font-bold text-amber-800'>05/10/2026</p>
+        </div>
+      </div>
+
+      <Table className='text-left'>
+        <TableHeader>
+          <TableRow className='border-b border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400 hover:bg-slate-50/70'>
+            <TableHead className='px-5 py-3.5 font-semibold sm:px-6'>Khoản thanh toán</TableHead>
+            <TableHead className='px-5 py-3.5 text-right font-semibold sm:px-6'>Số tiền</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {monthlyPaymentItems.map((item) => (
+            <TableRow key={item.label} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/60'>
+              <TableCell className='px-5 py-3.5 font-medium text-slate-600 sm:px-6'>{item.label}</TableCell>
+              <TableCell className='px-5 py-3.5 text-right font-semibold text-slate-700 sm:px-6'>{formatMoney(item.amount)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+
+      <div className='flex items-center justify-between gap-4 border-t-2 border-emerald-100 bg-emerald-50/50 px-5 py-4 sm:px-6'>
+        <span className='text-sm font-bold text-slate-800'>Tổng thanh toán</span>
+        <span className='text-xl font-extrabold tracking-tight text-emerald-700'>{formatMoney(total)}</span>
+      </div>
+    </article>
+  );
+}
+
 export function InvoicesView({ query }: { query: string }) {
   const filtered = invoices.filter((invoice) => `${invoice.id} ${invoice.room} ${invoice.tenant}`.toLowerCase().includes(query.toLowerCase()));
   return (
@@ -276,6 +326,7 @@ export function InvoicesView({ query }: { query: string }) {
         <StatCard icon={Check} label='Đã thanh toán' value='24,8tr' note='6 hóa đơn' tone='green' />
         <StatCard icon={CalendarDays} label='Chờ thu' value='8,1tr' note='2 hóa đơn' tone='orange' />
       </div>
+      <MonthlyPaymentInvoice />
       <div className='card overflow-hidden'>
         <Table className='min-w-190 text-left'>
           <TableHeader>
