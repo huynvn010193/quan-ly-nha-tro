@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp, CornerDownRight, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { ArrowDownAZ, ArrowDownZA, ChevronDown, ChevronUp, CornerDownRight, Eye, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { Tenant } from '@/backend/tenants/tenant.types';
@@ -12,10 +12,13 @@ import { Spinner } from '@/components/ui/spinner';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { StatusBadge } from './shared';
+import { TenantDetailsDialog } from './tenant-details-dialog';
 
 export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: string }) {
   const queryClient = useQueryClient();
   const [expandedRoomIds, setExpandedRoomIds] = useState<Set<string>>(() => new Set());
+  const [roomSort, setRoomSort] = useState<'asc' | 'desc'>('asc');
+  const [viewingTenant, setViewingTenant] = useState<Tenant | null>(null);
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
   const deleteTenantMutation = useMutation({
     mutationFn: async (tenant: Tenant) => {
@@ -30,6 +33,8 @@ export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: stri
     }
   });
   const search = query.trim().toLowerCase();
+  const matchesSearch = (tenant: Tenant) =>
+    `${tenant.fullName} ${tenant.activeRoom?.roomNumber || ''} ${tenant.phone || ''} ${tenant.cccd || ''}`.toLowerCase().includes(search);
   const tenantGroups = new Map<string, Tenant[]>();
 
   for (const tenant of tenants) {
@@ -46,13 +51,16 @@ export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: stri
       });
       return { roomId, tenants: sortedTenants };
     })
-    .filter(
-      ({ tenants: groupTenants }) =>
-        !search ||
-        groupTenants.some((tenant) =>
-          `${tenant.fullName} ${tenant.activeRoom?.roomNumber || ''} ${tenant.phone || ''} ${tenant.cccd || ''}`.toLowerCase().includes(search)
-        )
-    );
+    .filter(({ tenants: groupTenants }) => !search || groupTenants.some(matchesSearch))
+    .sort((left, right) => {
+      const leftRoom = left.tenants[0]?.activeRoom?.roomNumber;
+      const rightRoom = right.tenants[0]?.activeRoom?.roomNumber;
+      if (!leftRoom && !rightRoom) return left.roomId.localeCompare(right.roomId);
+      if (!leftRoom) return 1;
+      if (!rightRoom) return -1;
+      const comparison = leftRoom.localeCompare(rightRoom, 'vi', { numeric: true, sensitivity: 'base' });
+      return roomSort === 'asc' ? comparison : -comparison;
+    });
 
   const initials = (name: string) =>
     name
@@ -68,7 +76,19 @@ export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: stri
         <TableHeader>
           <TableRow className='border-b border-slate-100 bg-slate-50/60 text-[11px] uppercase tracking-wider text-slate-400 hover:bg-slate-50/60'>
             <TableHead className='px-6 py-4'>Người thuê</TableHead>
-            <TableHead className='px-5 py-4'>Phòng</TableHead>
+            <TableHead className='px-5 py-4'>
+              <button
+                type='button'
+                onClick={() => setRoomSort((current) => (current === 'asc' ? 'desc' : 'asc'))}
+                className='inline-flex items-center gap-1.5 rounded-md transition hover:text-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30'
+                aria-label={`Sắp xếp phòng ${roomSort === 'asc' ? 'Z đến A' : 'A đến Z'}`}
+                title={`Đang sắp xếp ${roomSort === 'asc' ? 'A–Z' : 'Z–A'}`}
+              >
+                Phòng
+                {roomSort === 'asc' ? <ArrowDownAZ size={14} /> : <ArrowDownZA size={14} />}
+                <span className='text-[9px] text-emerald-700'>{roomSort === 'asc' ? 'A–Z' : 'Z–A'}</span>
+              </button>
+            </TableHead>
             <TableHead className='px-5 py-4'>Vai trò</TableHead>
             <TableHead className='px-5 py-4'>Số điện thoại</TableHead>
             <TableHead className='px-5 py-4'>Ngày vào ở</TableHead>
@@ -80,8 +100,12 @@ export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: stri
           {roomGroups.flatMap((roomGroup) => {
             const primaryTenant = roomGroup.tenants.find((tenant) => tenant.activeRoom?.role === 'PRIMARY_TENANT') || roomGroup.tenants[0];
             const canCollapse = roomGroup.tenants.length > 1;
-            const isExpanded = Boolean(search) || expandedRoomIds.has(roomGroup.roomId);
-            const visibleTenants = canCollapse && !isExpanded ? [primaryTenant] : roomGroup.tenants;
+            const isExpanded = expandedRoomIds.has(roomGroup.roomId);
+            const visibleTenants = search
+              ? roomGroup.tenants.filter(matchesSearch)
+              : canCollapse && !isExpanded
+                ? [primaryTenant]
+                : roomGroup.tenants;
 
             return visibleTenants.map((tenant) => {
               const isMember = tenant.activeRoom?.role === 'MEMBER';
@@ -117,7 +141,7 @@ export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: stri
                   </TableCell>
                   <TableCell className='px-5 py-4'>
                     <p className='font-semibold text-slate-600'>{tenant.activeRoom?.roomNumber || 'Chưa phân phòng'}</p>
-                    {canCollapse && tenant.id === primaryTenant.id && (
+                    {!search && canCollapse && tenant.id === primaryTenant.id && (
                       <button
                         type='button'
                         onClick={() =>
@@ -153,40 +177,51 @@ export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: stri
                     <StatusBadge status={tenant.activeRoom ? 'Đang hiệu lực' : 'Đã chuyển đi'} />
                   </TableCell>
                   <TableCell className='px-5'>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type='button'
-                          aria-label={`Thao tác với ${tenant.fullName}`}
-                          className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-emerald-700 hover:shadow-sm'
-                        >
-                          <MoreHorizontal size={18} />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align='end'>
-                        <DropdownMenuItem asChild>
-                          <Link href={`/manager-tenant/${tenant.id}/edit`}>
-                            <Pencil />
-                            Chỉnh sửa
-                          </Link>
-                        </DropdownMenuItem>
-                        {tenant.activeRoom?.role === 'MEMBER' && (
-                          <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onSelect={() => {
-                                deleteTenantMutation.reset();
-                                setDeletingTenant(tenant);
-                              }}
-                              className='text-rose-600 focus:bg-rose-50 focus:text-rose-700'
-                            >
-                              <Trash2 />
-                              Xóa người thuê
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <div className='flex items-center justify-end gap-1'>
+                      <button
+                        type='button'
+                        onClick={() => setViewingTenant(tenant)}
+                        aria-label={`Xem thông tin ${tenant.fullName}`}
+                        title={`Xem thông tin ${tenant.fullName}`}
+                        className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-emerald-700 hover:shadow-sm'
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type='button'
+                            aria-label={`Thao tác với ${tenant.fullName}`}
+                            className='grid size-8 place-items-center rounded-lg text-slate-400 transition hover:bg-white hover:text-emerald-700 hover:shadow-sm'
+                          >
+                            <MoreHorizontal size={18} />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align='end'>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/manager-tenant/${tenant.id}/edit`}>
+                              <Pencil />
+                              Chỉnh sửa
+                            </Link>
+                          </DropdownMenuItem>
+                          {tenant.activeRoom?.role === 'MEMBER' && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  deleteTenantMutation.reset();
+                                  setDeletingTenant(tenant);
+                                }}
+                                className='text-rose-600 focus:bg-rose-50 focus:text-rose-700'
+                              >
+                                <Trash2 />
+                                Xóa người thuê
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                   </TableCell>
                 </TableRow>
               );
@@ -197,6 +232,7 @@ export function TenantsView({ tenants, query }: { tenants: Tenant[]; query: stri
       {roomGroups.length === 0 && (
         <div className='border-t border-slate-100 py-14 text-center text-sm text-slate-400'>Chưa có người thuê phù hợp.</div>
       )}
+      <TenantDetailsDialog tenant={viewingTenant} onClose={() => setViewingTenant(null)} />
       <Dialog
         open={Boolean(deletingTenant)}
         onOpenChange={(open) => {

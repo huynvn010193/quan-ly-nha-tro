@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { CalendarDays, Check, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { vi } from 'react-day-picker/locale';
-import type { CreateRoomInput, Room, RoomStatus } from '@/backend/rooms/room.types';
+import { ROOM_STATUS_LABELS, type CreateRoomInput, type Room, type RoomStatus } from '@/backend/rooms/room.types';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -121,33 +121,30 @@ export function DeleteRoomModal({ room, onClose, onDelete }: { room: Room; onClo
 
 export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: () => void; onSave: (room: Room) => Promise<void> }) {
   const hasMembers = Boolean(room.members?.length);
+  const statusManagedByContract = room.status === 'OCCUPIED' || room.status === 'RESERVED';
   const [name, setName] = useState(room.name);
-  const [tenant, setTenant] = useState(room.status === 'Còn trống' ? '' : room.tenant);
+  const [tenant, setTenant] = useState(hasMembers ? room.tenant : '');
   const [primaryTenantId, setPrimaryTenantId] = useState(room.primaryTenantId || '');
   const [price, setPrice] = useState(formatCurrencyInput(room.price));
   const [status, setStatus] = useState<RoomStatus>(room.status);
-  const [moveInDate, setMoveInDate] = useState<Date | undefined>(room.moveInDate ? new Date(room.moveInDate) : new Date());
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const submit = async () => {
     if (!name.trim()) return setError('Vui lòng nhập tên phòng.');
     const nextPrice = parseCurrencyInput(price);
     if (!Number.isFinite(nextPrice) || nextPrice <= 0) return setError('Giá thuê phải lớn hơn 0.');
-    if (status !== 'Còn trống' && hasMembers && !primaryTenantId) return setError('Vui lòng chọn chủ phòng.');
-    if (status !== 'Còn trống' && !hasMembers && !tenant.trim()) return setError('Vui lòng nhập tên người thuê.');
-    if (status !== 'Còn trống' && !moveInDate) return setError('Vui lòng chọn ngày bắt đầu thuê.');
+    if (hasMembers && !primaryTenantId) return setError('Vui lòng chọn chủ phòng.');
     const selectedPrimary = room.members?.find((member) => member.tenantId === primaryTenantId);
     try {
       setSaving(true);
       await onSave({
         ...room,
         name: name.trim().toUpperCase(),
-        tenant: status === 'Còn trống' ? 'Chưa có người thuê' : selectedPrimary?.fullName || tenant.trim(),
-        primaryTenantId: status === 'Còn trống' || !hasMembers ? undefined : primaryTenantId,
+        tenant: hasMembers ? selectedPrimary?.fullName || tenant.trim() : 'Chưa có người thuê',
+        primaryTenantId: hasMembers ? primaryTenantId : undefined,
         price: nextPrice,
         status,
-        people: status === 'Còn trống' ? 0 : Math.max(room.people, 1),
-        moveInDate: status === 'Còn trống' ? undefined : moveInDate?.toISOString()
+        people: room.people
       });
       onClose();
     } catch (saveError) {
@@ -187,13 +184,11 @@ export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: 
             {hasMembers ? (
               <Select
                 value={primaryTenantId}
-                disabled={status === 'Còn trống'}
                 onValueChange={(value) => {
                   setPrimaryTenantId(value);
                   const selectedMember = room.members?.find((member) => member.tenantId === value);
                   if (selectedMember) {
                     setTenant(selectedMember.fullName);
-                    setMoveInDate(new Date(selectedMember.moveInDate));
                   }
                   setError('');
                 }}
@@ -212,25 +207,22 @@ export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: 
             ) : (
               <Input
                 value={tenant}
-                onChange={(event) => {
-                  setTenant(event.target.value);
-                  setError('');
-                }}
-                disabled={status === 'Còn trống'}
-                placeholder={status === 'Còn trống' ? 'Phòng đang trống' : 'Nhập tên người thuê'}
+                disabled
+                placeholder='Chưa có người thuê'
                 className='field-input disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
               />
             )}
             {hasMembers && <p className='mt-1.5 text-[10px] text-slate-400'>Khi đổi chủ phòng, chủ phòng hiện tại sẽ chuyển thành Thành viên.</p>}
           </div>
-          <MoveInDateField
-            date={moveInDate}
-            onChange={(date) => {
-              setMoveInDate(date);
-              setError('');
-            }}
-            disabled={status === 'Còn trống'}
-          />
+          <div>
+            <span className='field-label'>Ngày bắt đầu thuê</span>
+            <Input
+              value={room.moveInDate ? format(new Date(room.moveInDate), 'dd/MM/yyyy') : 'Chưa có hợp đồng'}
+              disabled
+              className='field-input disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500'
+            />
+            <p className='mt-1.5 text-[10px] text-slate-400'>Ngày này được lấy từ ngày bắt đầu hợp đồng.</p>
+          </div>
           <label className='block'>
             <span className='field-label'>Giá thuê hàng tháng</span>
             <div className='relative'>
@@ -251,6 +243,7 @@ export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: 
             <span className='field-label'>Trạng thái</span>
             <Select
               value={status}
+              disabled={statusManagedByContract}
               onValueChange={(value) => {
                 setStatus(value as RoomStatus);
                 setError('');
@@ -260,11 +253,16 @@ export function EditRoomModal({ room, onClose, onSave }: { room: Room; onClose: 
                 <SelectValue placeholder='Chọn trạng thái' />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value='Đang thuê'>Đang thuê</SelectItem>
-                <SelectItem value='Còn trống'>Còn trống</SelectItem>
-                <SelectItem value='Sắp trả'>Sắp trả</SelectItem>
+                <SelectItem value='AVAILABLE'>Phòng trống</SelectItem>
+                <SelectItem value='MAINTENANCE'>Bảo trì</SelectItem>
+                {statusManagedByContract && <SelectItem value={status}>{ROOM_STATUS_LABELS[status]}</SelectItem>}
               </SelectContent>
             </Select>
+            <p className='mt-1.5 text-[10px] leading-4 text-slate-400'>
+              {statusManagedByContract
+                ? 'Trạng thái này được tự động cập nhật theo hợp đồng. Hãy chỉnh sửa hợp đồng để thay đổi.'
+                : 'Phòng không có hợp đồng có thể chuyển giữa Phòng trống và Bảo trì.'}
+            </p>
           </label>
           {error && (
             <p role='alert' className='rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-600'>
@@ -290,8 +288,11 @@ export function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (
   const [name, setName] = useState('');
   const [primaryTenantName, setPrimaryTenantName] = useState('');
   const [price, setPrice] = useState('3.500.000');
+  const [depositAmount, setDepositAmount] = useState('3.500.000');
+  const [billingDay, setBillingDay] = useState('5');
+  const [endDate, setEndDate] = useState('');
   const [floor, setFloor] = useState('Tầng 1');
-  const [status, setStatus] = useState<RoomStatus>('Đang thuê');
+  const [contractMode, setContractMode] = useState<'NONE' | 'PENDING' | 'ACTIVE'>('NONE');
   const [moveInDate, setMoveInDate] = useState<Date | undefined>(new Date());
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -299,20 +300,39 @@ export function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (
     if (!name.trim()) return setError('Vui lòng nhập tên phòng.');
     const nextPrice = parseCurrencyInput(price);
     if (!nextPrice || nextPrice <= 0) return setError('Giá thuê phải lớn hơn 0.');
-    if (status !== 'Còn trống' && !primaryTenantName.trim()) return setError('Vui lòng nhập tên chủ phòng.');
-    if (status !== 'Còn trống' && !moveInDate) return setError('Vui lòng chọn ngày bắt đầu thuê.');
+    const hasContract = contractMode !== 'NONE';
+    if (hasContract && !primaryTenantName.trim()) return setError('Vui lòng nhập tên chủ phòng.');
+    if (hasContract && !moveInDate) return setError('Vui lòng chọn ngày bắt đầu thuê.');
+    const nextDepositAmount = parseCurrencyInput(depositAmount);
+    const nextBillingDay = Number(billingDay);
+    if (hasContract && (!Number.isInteger(nextBillingDay) || nextBillingDay < 1 || nextBillingDay > 31)) {
+      return setError('Ngày đóng tiền phải từ 1 đến 31.');
+    }
+    if (hasContract && endDate && moveInDate && new Date(endDate) < moveInDate) {
+      return setError('Ngày kết thúc không được trước ngày bắt đầu.');
+    }
+    const status: RoomStatus = contractMode === 'ACTIVE' ? 'OCCUPIED' : contractMode === 'PENDING' ? 'RESERVED' : 'AVAILABLE';
     try {
       setSaving(true);
       setError('');
       await onAdd({
         name: name.toUpperCase(),
         floor,
-        tenant: status === 'Còn trống' ? 'Chưa có người thuê' : primaryTenantName.trim(),
+        tenant: hasContract ? primaryTenantName.trim() : 'Chưa có người thuê',
         price: nextPrice,
         status,
-        people: status === 'Còn trống' ? 0 : 1,
-        primaryTenantName: status === 'Còn trống' ? undefined : primaryTenantName.trim(),
-        moveInDate: status === 'Còn trống' ? undefined : moveInDate?.toISOString()
+        people: hasContract ? 1 : 0,
+        primaryTenantName: hasContract ? primaryTenantName.trim() : undefined,
+        moveInDate: hasContract ? moveInDate?.toISOString() : undefined,
+        contract: hasContract
+          ? {
+              status: contractMode as 'PENDING' | 'ACTIVE',
+              startDate: moveInDate!.toISOString(),
+              endDate: endDate ? new Date(`${endDate}T00:00:00`).toISOString() : null,
+              depositAmount: nextDepositAmount,
+              billingDay: nextBillingDay
+            }
+          : undefined
       });
       onClose();
     } catch (saveError) {
@@ -323,7 +343,7 @@ export function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (
   };
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent className='max-h-[calc(100vh-2rem)] max-w-md overflow-y-auto' showCloseButton={!saving}>
+      <DialogContent className='max-h-[calc(100vh-2rem)] max-w-2xl overflow-y-auto' showCloseButton={!saving}>
         <DialogHeader className='pr-9'>
           <DialogTitle>Thêm phòng mới</DialogTitle>
           <DialogDescription className='mt-1'>Nhập thông tin cơ bản của phòng.</DialogDescription>
@@ -343,29 +363,53 @@ export function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (
             />
           </label>
           <label className='block'>
-            <span className='field-label'>Chủ phòng</span>
+            <span className='field-label'>Luồng tạo phòng</span>
+            <Select
+              value={contractMode}
+              onValueChange={(value) => {
+                const nextMode = value as 'NONE' | 'PENDING' | 'ACTIVE';
+                setContractMode(nextMode);
+                if (nextMode === 'NONE') setPrimaryTenantName('');
+                setError('');
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder='Chọn luồng tạo phòng' />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='NONE'>Chưa tạo hợp đồng → Phòng trống</SelectItem>
+                <SelectItem value='PENDING'>Tạo hợp đồng, chưa kích hoạt → Đã đặt</SelectItem>
+                <SelectItem value='ACTIVE'>Tạo và kích hoạt hợp đồng → Đang thuê</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className='mt-1.5 text-[10px] text-slate-400'>Trạng thái phòng sẽ được hệ thống tự động gán theo lựa chọn này.</p>
+          </label>
+          <label className='block'>
+            <span className='field-label'>Chủ phòng {contractMode !== 'NONE' ? '*' : ''}</span>
             <Input
               value={primaryTenantName}
-              disabled={status === 'Còn trống'}
+              disabled={contractMode === 'NONE'}
               onChange={(event) => {
                 setPrimaryTenantName(event.target.value);
                 setError('');
               }}
-              placeholder={status === 'Còn trống' ? 'Phòng đang trống' : 'Nhập tên chủ phòng'}
+              placeholder={contractMode === 'NONE' ? 'Chọn tạo hợp đồng để nhập chủ phòng' : 'Nhập tên chủ phòng'}
               className='field-input disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400'
             />
             <p className='mt-1.5 text-[10px] leading-4 text-slate-400'>
-              Hệ thống sẽ tạo hồ sơ tạm. Bạn có thể bổ sung thông tin tại trang Người thuê.
+              Khi có hợp đồng, hệ thống sẽ tạo hồ sơ người thuê tạm để bạn bổ sung sau.
             </p>
           </label>
-          <MoveInDateField
-            date={moveInDate}
-            onChange={(date) => {
-              setMoveInDate(date);
-              setError('');
-            }}
-            disabled={status === 'Còn trống'}
-          />
+          {contractMode !== 'NONE' && (
+            <MoveInDateField
+              date={moveInDate}
+              onChange={(date) => {
+                setMoveInDate(date);
+                setError('');
+              }}
+              disabled={false}
+            />
+          )}
           <label className='block'>
             <span className='field-label'>Giá thuê hàng tháng</span>
             <Input
@@ -398,27 +442,48 @@ export function AddRoomModal({ onClose, onAdd }: { onClose: () => void; onAdd: (
               </SelectContent>
             </Select>
           </label>
-          <label className='block'>
-            <span className='field-label'>Trạng thái</span>
-            <Select
-              value={status}
-              onValueChange={(value) => {
-                const nextStatus = value as RoomStatus;
-                setStatus(nextStatus);
-                if (nextStatus === 'Còn trống') setPrimaryTenantName('');
-                setError('');
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder='Chọn trạng thái' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='Đang thuê'>Đang thuê</SelectItem>
-                <SelectItem value='Còn trống'>Còn trống</SelectItem>
-                <SelectItem value='Sắp trả'>Sắp trả</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
+          {contractMode !== 'NONE' && (
+            <div className='rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4'>
+              <p className='mb-3 text-xs font-bold text-emerald-800'>Thông tin hợp đồng</p>
+              <div className='grid gap-4 sm:grid-cols-2'>
+                <label className='block'>
+                  <span className='field-label'>Tiền cọc</span>
+                  <Input
+                    value={depositAmount}
+                    inputMode='numeric'
+                    onChange={(event) => {
+                      setDepositAmount(formatCurrencyInput(event.target.value));
+                      setError('');
+                    }}
+                  />
+                </label>
+                <label className='block'>
+                  <span className='field-label'>Ngày đóng tiền hàng tháng</span>
+                  <Input
+                    type='number'
+                    min={1}
+                    max={31}
+                    value={billingDay}
+                    onChange={(event) => {
+                      setBillingDay(event.target.value);
+                      setError('');
+                    }}
+                  />
+                </label>
+                <label className='block sm:col-span-2'>
+                  <span className='field-label'>Ngày kết thúc (không bắt buộc)</span>
+                  <Input
+                    type='date'
+                    value={endDate}
+                    onChange={(event) => {
+                      setEndDate(event.target.value);
+                      setError('');
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
           {error && (
             <p role='alert' className='rounded-xl bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-600'>
               {error}

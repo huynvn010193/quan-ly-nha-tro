@@ -1,10 +1,25 @@
 import { ObjectId, type ClientSession, type Collection, type Db, type Filter, type WithId } from 'mongodb';
 import { getDatabase, getMongoClient } from '@/backend/database/mongodb';
 import { deleteTenantFiles } from '@/backend/tenants/tenant.repository';
+import type { ContractStatus } from '@/backend/contracts/contract.types';
 import type { CreateRoomInput, Room, RoomListResult, RoomStatus, UpdateRoomInput } from './room.types';
 
-type RoomDocument = Omit<CreateRoomInput, 'primaryTenantId' | 'primaryTenantName' | 'moveInDate'> & {
+type RoomDocument = Omit<CreateRoomInput, 'primaryTenantId' | 'primaryTenantName' | 'moveInDate' | 'contract'> & {
   moveInDate?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type ContractDocument = {
+  roomId: ObjectId;
+  ownerTenantId: ObjectId;
+  startDate: Date;
+  endDate: Date | null;
+  rentAmount: number;
+  depositAmount: number;
+  billingDay: number;
+  status: ContractStatus;
+  note?: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -25,28 +40,35 @@ type RoomSummary = {
   people: number;
   primaryTenantId?: string;
   members: Room['members'];
-  moveInDate?: Date;
 };
 
-let indexPromise: Promise<string[]> | undefined;
+let indexPromise: Promise<void> | undefined;
 
 async function getRoomsCollection(): Promise<Collection<RoomDocument>> {
   const database = await getDatabase();
   const collection = database.collection<RoomDocument>('rooms');
 
   if (!indexPromise) {
-    indexPromise = Promise.all([
-      collection.createIndex({ name: 1 }, { unique: true, name: 'unique_room_name' }),
-      collection.createIndex({ status: 1 }, { name: 'room_status' }),
-      collection.createIndex({ tenant: 1 }, { name: 'room_tenant' })
-    ]);
+    indexPromise = (async () => {
+      const rawRooms = database.collection('rooms');
+      await Promise.all([
+        rawRooms.updateMany({ status: 'Còn trống' }, { $set: { status: 'AVAILABLE' } }),
+        rawRooms.updateMany({ status: { $in: ['Đang thuê', 'Sắp trả'] } }, { $set: { status: 'OCCUPIED' } }),
+        rawRooms.updateMany({ status: 'Đang sửa chữa' }, { $set: { status: 'MAINTENANCE' } })
+      ]);
+      await Promise.all([
+        collection.createIndex({ name: 1 }, { unique: true, name: 'unique_room_name' }),
+        collection.createIndex({ status: 1 }, { name: 'room_status' }),
+        collection.createIndex({ tenant: 1 }, { name: 'room_tenant' })
+      ]);
+    })();
   }
   await indexPromise;
 
   return collection;
 }
 
-function toRoom(document: WithId<RoomDocument>, summary?: RoomSummary): Room {
+function toRoom(document: WithId<RoomDocument>, summary?: RoomSummary, contractStartDate?: Date): Room {
   return {
     id: document._id.toHexString(),
     name: document.name,
@@ -57,7 +79,7 @@ function toRoom(document: WithId<RoomDocument>, summary?: RoomSummary): Room {
     people: summary?.people ?? document.people,
     primaryTenantId: summary?.primaryTenantId,
     members: summary?.members,
-    moveInDate: summary?.moveInDate?.toISOString() ?? document.moveInDate?.toISOString(),
+    moveInDate: contractStartDate?.toISOString(),
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString()
   };
@@ -102,6 +124,18 @@ export async function listRooms(options: { page: number; limit: number; search?:
         .find({ _id: { $in: tenantIds } })
         .toArray()
     : [];
+  const currentContracts = roomIds.length
+    ? await database
+        .collection<ContractDocument>('contracts')
+        .find({ roomId: { $in: roomIds }, status: { $in: ['ACTIVE', 'PENDING'] } })
+        .sort({ status: 1, updatedAt: -1 })
+        .toArray()
+    : [];
+  const contractStartByRoom = new Map<string, Date>();
+  for (const contract of currentContracts) {
+    const roomId = contract.roomId.toHexString();
+    if (!contractStartByRoom.has(roomId)) contractStartByRoom.set(roomId, contract.startDate);
+  }
   const tenantById = new Map(tenants.map((tenant) => [tenant._id.toHexString(), tenant.fullName]));
   const summaryByRoom = new Map<string, RoomSummary>();
   for (const roomId of roomIds) {
@@ -117,13 +151,14 @@ export async function listRooms(options: { page: number; limit: number; search?:
         fullName: tenantById.get(membership.tenantId.toHexString()) || 'Người thuê đã xóa',
         role: membership.role,
         moveInDate: membership.moveInDate.toISOString()
-      })),
-      moveInDate: primary.moveInDate
+      }))
     });
   }
 
   return {
-    data: documents.map((document) => toRoom(document, summaryByRoom.get(document._id.toHexString()))),
+    data: documents.map((document) =>
+      toRoom(document, summaryByRoom.get(document._id.toHexString()), contractStartByRoom.get(document._id.toHexString()))
+    ),
     pagination: {
       page: options.page,
       limit: options.limit,
@@ -144,7 +179,6 @@ async function syncRoomFromMembers(database: Db, roomId: ObjectId, session: Clie
       $set: {
         people: activeMembers.length,
         tenant: primaryTenant?.fullName || (activeMembers.length ? 'Chưa có chủ phòng' : 'Chưa có người thuê'),
-        status: activeMembers.length ? 'Đang thuê' : 'Còn trống',
         updatedAt: new Date()
       }
     },
@@ -155,7 +189,7 @@ async function syncRoomFromMembers(database: Db, roomId: ObjectId, session: Clie
 export async function createRoom(input: CreateRoomInput): Promise<Room> {
   const collection = await getRoomsCollection();
   const now = new Date();
-  const { primaryTenantId, primaryTenantName, moveInDate, ...roomInput } = input;
+  const { primaryTenantId, primaryTenantName, moveInDate, contract, ...roomInput } = input;
 
   if (!primaryTenantId && !primaryTenantName) {
     const document: RoomDocument = { ...roomInput, createdAt: now, updatedAt: now };
@@ -211,7 +245,7 @@ export async function createRoom(input: CreateRoomInput): Promise<Room> {
         ...roomInput,
         tenant: tenantName,
         people: 1,
-        status: roomInput.status === 'Còn trống' ? 'Đang thuê' : roomInput.status,
+        status: roomInput.status,
         createdAt: now,
         updatedAt: now
       };
@@ -230,6 +264,24 @@ export async function createRoom(input: CreateRoomInput): Promise<Room> {
         },
         { session }
       );
+      if (contract) {
+        await database.collection<ContractDocument>('contracts').insertOne(
+          {
+            roomId: result.insertedId,
+            ownerTenantId: tenantId,
+            startDate: new Date(contract.startDate),
+            endDate: contract.endDate ? new Date(contract.endDate) : null,
+            rentAmount: roomInput.price,
+            depositAmount: contract.depositAmount,
+            billingDay: contract.billingDay,
+            status: contract.status,
+            note: contract.note,
+            createdAt: now,
+            updatedAt: now
+          },
+          { session }
+        );
+      }
       if (currentMembership) await syncRoomFromMembers(database, currentMembership.roomId, session);
     });
   } finally {
@@ -237,7 +289,7 @@ export async function createRoom(input: CreateRoomInput): Promise<Room> {
   }
 
   if (!createdRoom) throw new Error('Không thể tạo phòng.');
-  return toRoom(createdRoom);
+  return toRoom(createdRoom, undefined, contract ? new Date(contract.startDate) : undefined);
 }
 
 export async function updateRoom(id: string, input: UpdateRoomInput): Promise<Room | null> {
@@ -256,50 +308,17 @@ export async function updateRoom(id: string, input: UpdateRoomInput): Promise<Ro
       found = true;
 
       const roomMembers = database.collection<RoomMemberDocument>('roomMembers');
+      const contracts = database.collection<ContractDocument>('contracts');
       const activeMembers = await roomMembers.find({ roomId, isActive: true }, { session }).toArray();
-      if (activeMembers.length && input.status === 'Còn trống') throw new Error('ROOM_HAS_ACTIVE_MEMBERS');
-
       const now = new Date();
       const moveInDateValue = input.moveInDate ? new Date(input.moveInDate) : undefined;
-      const nextStatus = input.status ?? currentRoom.status;
-      if (!activeMembers.length && nextStatus !== 'Còn trống') {
-        const tenantName = input.tenant?.trim();
-        if (!tenantName || tenantName === 'Chưa có người thuê') throw new Error('TENANT_NAME_REQUIRED');
-
-        const tenants = database.collection<{
-          fullName: string;
-          cccdImages: Record<string, string>;
-          attachments: unknown[];
-          profileCompleted: boolean;
-          createdAt: Date;
-          updatedAt: Date;
-        }>('tenants');
-        const tenantId = (
-          await tenants.insertOne(
-            {
-              fullName: tenantName,
-              cccdImages: {},
-              attachments: [],
-              profileCompleted: false,
-              createdAt: now,
-              updatedAt: now
-            },
-            { session }
-          )
-        ).insertedId;
-        const membership: RoomMemberDocument = {
-          roomId,
-          tenantId,
-          role: 'PRIMARY_TENANT',
-          moveInDate: moveInDateValue || now,
-          moveOutDate: null,
-          isActive: true,
-          createdAt: now,
-          updatedAt: now
-        };
-        const membershipId = (await roomMembers.insertOne(membership, { session })).insertedId;
-        activeMembers.push({ ...membership, _id: membershipId });
+      const currentContract = await contracts.findOne({ roomId, status: { $in: ['PENDING', 'ACTIVE'] } }, { session });
+      const contractStatus: RoomStatus | undefined = currentContract?.status === 'ACTIVE' ? 'OCCUPIED' : currentContract ? 'RESERVED' : undefined;
+      if (input.status === 'MAINTENANCE' && currentContract) throw new Error('ROOM_HAS_CURRENT_CONTRACT');
+      if (input.status && (input.status === 'OCCUPIED' || input.status === 'RESERVED') && input.status !== contractStatus) {
+        throw new Error('ROOM_STATUS_MANAGED_BY_CONTRACT');
       }
+      const nextStatus = contractStatus || input.status || currentRoom.status;
 
       let activePrimary = activeMembers.find((member) => member.role === 'PRIMARY_TENANT') || activeMembers[0];
       if (input.primaryTenantId) {
@@ -313,6 +332,11 @@ export async function updateRoom(id: string, input: UpdateRoomInput): Promise<Ro
             await roomMembers.updateOne({ _id: activePrimary._id }, { $set: { role: 'MEMBER', updatedAt: now } }, { session });
           }
           await roomMembers.updateOne({ _id: selectedMember._id }, { $set: { role: 'PRIMARY_TENANT', updatedAt: now } }, { session });
+          await contracts.updateMany(
+            { roomId, status: { $in: ['PENDING', 'ACTIVE'] } },
+            { $set: { ownerTenantId: selectedTenantId, updatedAt: now } },
+            { session }
+          );
           activePrimary = { ...selectedMember, role: 'PRIMARY_TENANT', updatedAt: now };
         }
       }
@@ -328,10 +352,10 @@ export async function updateRoom(id: string, input: UpdateRoomInput): Promise<Ro
         ...(input.name ? { name: input.name } : {}),
         ...(input.floor ? { floor: input.floor } : {}),
         ...(input.price ? { price: input.price } : {}),
-        ...(input.status ? { status: input.status } : {}),
+        status: nextStatus,
         ...(moveInDateValue ? { moveInDate: moveInDateValue } : {}),
         tenant: primaryTenant?.fullName || (activeMembers.length ? 'Chưa có chủ phòng' : input.tenant || currentRoom.tenant),
-        people: activeMembers.length || input.people || 0,
+        people: activeMembers.length,
         updatedAt: now
       };
       await collection.updateOne({ _id: roomId }, { $set: roomFields }, { session });
@@ -342,7 +366,12 @@ export async function updateRoom(id: string, input: UpdateRoomInput): Promise<Ro
 
   if (!found) return null;
   const result = await collection.findOne({ _id: roomId });
-  return result ? toRoom(result) : null;
+  const currentContract = result
+    ? await database
+        .collection<ContractDocument>('contracts')
+        .findOne({ roomId, status: { $in: ['ACTIVE', 'PENDING'] } }, { sort: { status: 1, updatedAt: -1 } })
+    : null;
+  return result ? toRoom(result, undefined, currentContract?.startDate) : null;
 }
 
 export async function deleteRoom(id: string): Promise<boolean> {
@@ -361,6 +390,7 @@ export async function deleteRoom(id: string): Promise<boolean> {
       if (!room) return;
 
       const roomMembers = database.collection<RoomMemberDocument>('roomMembers');
+      const contracts = database.collection<ContractDocument>('contracts');
       const activeMembers = await roomMembers.find({ roomId, isActive: true }, { session }).toArray();
       const tenantIds = [...new Map(activeMembers.map((member) => [member.tenantId.toHexString(), member.tenantId])).values()];
 
@@ -381,6 +411,7 @@ export async function deleteRoom(id: string): Promise<boolean> {
       }
 
       await roomMembers.deleteMany({ roomId }, { session });
+      await contracts.deleteMany({ roomId }, { session });
       await collection.deleteOne({ _id: roomId }, { session });
       deleted = true;
     });
