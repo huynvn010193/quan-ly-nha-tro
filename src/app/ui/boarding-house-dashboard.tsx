@@ -34,7 +34,8 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { AddRoomModal } from './dashboard/room-modals';
 import { ContractsView } from './dashboard/contracts-view';
-import { Overview, InvoicesView, FinanceView, MaintenanceView } from './dashboard/overview-and-operations';
+import { InvoicesView } from './dashboard/invoices-view';
+import { Overview, FinanceView, MaintenanceView } from './dashboard/overview-and-operations';
 import { RoomsView } from './dashboard/rooms-view';
 import { TenantsView } from './dashboard/tenants-view';
 import { TenantCreateForm } from './tenant-create-form';
@@ -75,12 +76,10 @@ async function apiRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function BoardingHouseDashboard({
   initialView = 'overview',
-  editingTenantId,
-  initialContractRoomId
+  editingTenantId
 }: {
   initialView?: View;
   editingTenantId?: string;
-  initialContractRoomId?: string;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -95,8 +94,8 @@ export function BoardingHouseDashboard({
         : viewTitles[view],
     [editingTenantId, view]
   );
-  const needsRooms = view === 'overview' || view === 'rooms' || view === 'tenant-create' || view === 'contracts';
-  const needsTenants = view === 'tenants' || view === 'contracts';
+  const needsRooms = view === 'overview' || view === 'rooms' || view === 'tenant-create' || view === 'contracts' || view === 'invoices';
+  const needsTenants = view === 'rooms' || view === 'tenants' || view === 'contracts';
 
   const roomsQuery = useQuery({
     queryKey: roomsQueryKey,
@@ -348,10 +347,10 @@ export function BoardingHouseDashboard({
             </div>
           )}
           {view === 'overview' && <Overview rooms={rooms} />}
-          {view === 'rooms' && <RoomsView rooms={rooms} query={query} onUpdate={updateRoom} onDelete={deleteRoom} />}
+          {view === 'rooms' && <RoomsView rooms={rooms} tenants={tenantRecords} query={query} onUpdate={updateRoom} onDelete={deleteRoom} />}
           {view === 'tenants' && <TenantsView tenants={tenantRecords} query={query} />}
           {view === 'contracts' && (
-            <ContractsView rooms={rooms} tenants={tenantRecords} query={query} initialRoomId={initialContractRoomId} />
+            <ContractsView rooms={rooms} tenants={tenantRecords} query={query} />
           )}
           {view === 'tenant-create' && (
             <TenantCreateForm
@@ -360,7 +359,7 @@ export function BoardingHouseDashboard({
               tenant={tenantDetailQuery.data?.data}
             />
           )}
-          {view === 'invoices' && <InvoicesView query={query} />}
+          {view === 'invoices' && <InvoicesView rooms={rooms} query={query} />}
           {view === 'finance' && <FinanceView />}
           {view === 'maintenance' && <MaintenanceView />}
           <footer className='mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-5 text-[10px] text-slate-400'>

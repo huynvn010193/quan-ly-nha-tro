@@ -1,12 +1,14 @@
 'use client';
 
 import { ChevronLeft, ChevronRight, DoorOpen, FilePenLine, FilePlus2, Pencil, Trash2, UsersRound } from 'lucide-react';
-import Link from 'next/link';
 import { useState } from 'react';
 import type { Room, RoomStatus } from '@/backend/rooms/room.types';
+import type { Tenant } from '@/backend/tenants/tenant.types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { RoomContractDialog } from './contracts-view';
 import { DeleteRoomModal, EditRoomModal } from './room-modals';
 import { formatMoney, roomStatusLabel, StatusBadge } from './shared';
+import { getRoomStatusText } from './contanst';
 
 const roomFilters: { value: 'Tất cả phòng' | RoomStatus; label: string }[] = [
   { value: 'Tất cả phòng', label: 'Tất cả phòng' },
@@ -18,11 +20,13 @@ const roomFilters: { value: 'Tất cả phòng' | RoomStatus; label: string }[] 
 
 export function RoomsView({
   rooms,
+  tenants,
   query,
   onUpdate,
   onDelete
 }: {
   rooms: Room[];
+  tenants: Tenant[];
   query: string;
   onUpdate: (room: Room) => Promise<void>;
   onDelete: (room: Room) => Promise<void>;
@@ -31,6 +35,7 @@ export function RoomsView({
   const [page, setPage] = useState(1);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
+  const [contractRoom, setContractRoom] = useState<Room | null>(null);
   const pageSize = 5;
   const filtered = rooms.filter(
     (room) =>
@@ -99,13 +104,7 @@ export function RoomsView({
                 <TableCell className='px-5 py-4'>
                   <p className={room.people === 0 ? 'text-slate-400' : 'font-medium text-slate-600'}>{room.tenant}</p>
                   <p className='mt-0.5 text-[10px] text-slate-400'>
-                    {room.status === 'OCCUPIED'
-                      ? 'Hợp đồng đang hiệu lực'
-                      : room.status === 'RESERVED'
-                        ? 'Hợp đồng chờ hiệu lực'
-                        : room.status === 'MAINTENANCE'
-                          ? 'Tạm ngưng cho thuê'
-                          : 'Sẵn sàng cho thuê'}
+                    {getRoomStatusText(room.status)}
                   </p>
                 </TableCell>
                 <TableCell className='px-5 py-4 text-center'>
@@ -126,15 +125,16 @@ export function RoomsView({
                 </TableCell>
                 <TableCell className='px-5 py-4'>
                   <div className='flex items-center gap-1'>
-                    <Link
-                      href={`/manager-contract?roomId=${room.id}`}
+                    <button
+                      type='button'
+                      onClick={() => setContractRoom(room)}
                       aria-label={`${room.moveInDate ? 'Sửa' : 'Tạo'} hợp đồng cho ${room.name}`}
                       title={`${room.moveInDate ? 'Sửa' : 'Tạo'} hợp đồng cho ${room.name}`}
                       className='inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10px] font-semibold text-slate-500 transition hover:bg-blue-50 hover:text-blue-700'
                     >
                       {room.moveInDate ? <FilePenLine size={15} /> : <FilePlus2 size={15} />}
                       <span className='hidden xl:inline'>{room.moveInDate ? 'Sửa hợp đồng' : 'Tạo hợp đồng'}</span>
-                    </Link>
+                    </button>
                     <button
                       onClick={() => setEditingRoom(room)}
                       aria-label={`Chỉnh sửa ${room.name}`}
@@ -200,6 +200,7 @@ export function RoomsView({
         )}
       </div>
       {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onSave={onUpdate} />}
+      {contractRoom && <RoomContractDialog room={contractRoom} rooms={rooms} tenants={tenants} onClose={() => setContractRoom(null)} />}
       {deletingRoom && (
         <DeleteRoomModal
           room={deletingRoom}
