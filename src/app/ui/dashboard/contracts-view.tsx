@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import { CalendarDays, CheckCircle2, Clock3, FilePenLine, FileText, MoreHorizontal, Plus, Trash2, WalletCards } from 'lucide-react';
 import { vi } from 'react-day-picker/locale';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import * as yup from 'yup';
 import {
   CONTRACT_STATUSES,
@@ -391,20 +391,114 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
+export function RoomContractDialog({
+  room,
+  rooms,
+  tenants,
+  onClose
+}: {
+  room: Room;
+  rooms: Room[];
+  tenants: Tenant[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const contractsQuery = useQuery({
+    queryKey: ['contracts'],
+    queryFn: () => request<ContractListResult>('/api/contracts?limit=100', { cache: 'no-store' })
+  });
+  const currentContract = useMemo(
+    () =>
+      contractsQuery.data?.data.find(
+        (contract) => contract.roomId === room.id && (contract.status === 'PENDING' || contract.status === 'ACTIVE')
+      ),
+    [contractsQuery.data?.data, room.id]
+  );
+  const saveMutation = useMutation({
+    mutationFn: async (values: ContractFormValues) => {
+      const payload: CreateContractInput = { ...values, endDate: values.endDate || null, note: values.note || undefined };
+      return request<{ data: Contract }>(currentContract ? `/api/contracts/${currentContract.id}` : '/api/contracts', {
+        method: currentContract ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['contracts'] }),
+        queryClient.invalidateQueries({ queryKey: ['rooms'] }),
+        queryClient.invalidateQueries({ queryKey: ['tenants'] })
+      ]);
+      onClose();
+    }
+  });
+
+  if (contractsQuery.isLoading) {
+    return (
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className='max-w-md'>
+          <DialogHeader>
+            <DialogTitle>Đang tải hợp đồng</DialogTitle>
+            <DialogDescription>Đang kiểm tra hợp đồng hiện tại của {room.name}.</DialogDescription>
+          </DialogHeader>
+          <div className='grid min-h-32 place-items-center'>
+            <Spinner className='size-6 text-emerald-700' />
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (contractsQuery.isError) {
+    return (
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className='max-w-md'>
+          <DialogHeader>
+            <DialogTitle>Không thể tải hợp đồng</DialogTitle>
+            <DialogDescription>
+              {contractsQuery.error instanceof Error ? contractsQuery.error.message : 'Vui lòng thử lại sau.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className='mt-5'>
+            <Button type='button' variant='outline' onClick={onClose}>
+              Đóng
+            </Button>
+            <Button type='button' onClick={() => contractsQuery.refetch()}>
+              Thử lại
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <ContractFormDialog
+      key={currentContract?.id || room.id}
+      contract={currentContract}
+      initialRoomId={currentContract ? undefined : room.id}
+      rooms={rooms}
+      tenants={tenants}
+      pending={saveMutation.isPending}
+      error={saveMutation.error instanceof Error ? saveMutation.error.message : undefined}
+      onClose={onClose}
+      onSave={async (values) => {
+        await saveMutation.mutateAsync(values);
+      }}
+    />
+  );
+}
+
 export function ContractsView({
   rooms,
   tenants,
-  query,
-  initialRoomId
+  query
 }: {
   rooms: Room[];
   tenants: Tenant[];
   query: string;
-  initialRoomId?: string;
 }) {
   const queryClient = useQueryClient();
-  const initialRoomHandled = useRef(false);
-  const [requestedRoomId, setRequestedRoomId] = useState(initialRoomId);
   const [status, setStatus] = useState<'ALL' | ContractStatus>('ALL');
   const [formOpen, setFormOpen] = useState(false);
   const [editingContract, setEditingContract] = useState<Contract | undefined>();
@@ -430,7 +524,6 @@ export function ContractsView({
       ]);
       setFormOpen(false);
       setEditingContract(undefined);
-      setRequestedRoomId(undefined);
     }
   });
   const deleteMutation = useMutation({
@@ -444,15 +537,6 @@ export function ContractsView({
     }
   });
   const contracts = useMemo(() => contractsQuery.data?.data || [], [contractsQuery.data?.data]);
-  useEffect(() => {
-    if (!requestedRoomId || !contractsQuery.isSuccess || initialRoomHandled.current) return;
-    const currentContract = contracts.find(
-      (contract) => contract.roomId === requestedRoomId && (contract.status === 'PENDING' || contract.status === 'ACTIVE')
-    );
-    setEditingContract(currentContract);
-    setFormOpen(true);
-    initialRoomHandled.current = true;
-  }, [contracts, contractsQuery.isSuccess, requestedRoomId]);
   const search = query.trim().toLowerCase();
   const filtered = contracts.filter(
     (contract) =>
@@ -509,7 +593,6 @@ export function ContractsView({
           onClick={() => {
             saveMutation.reset();
             setEditingContract(undefined);
-            setRequestedRoomId(undefined);
             setFormOpen(true);
           }}
           className='primary-button'
@@ -549,8 +632,7 @@ export function ContractsView({
                   </p>
                 </TableCell>
                 <TableCell className='px-5 py-4 text-slate-500'>
-                  <p className='font-medium text-slate-600'>{formatDate(contract.startDate)}</p>
-                  <p className='mt-0.5 text-[10px] text-slate-400'>đến {formatDate(contract.endDate)}</p>
+                  <p className='font-medium text-slate-600'>{formatDate(contract.startDate)} {"->"} {formatDate(contract.endDate)}</p>
                 </TableCell>
                 <TableCell className='px-5 py-4 font-bold text-emerald-700'>{formatMoney(contract.rentAmount)}</TableCell>
                 <TableCell className='px-5 py-4 font-semibold text-slate-600'>{formatMoney(contract.depositAmount)}</TableCell>
@@ -601,7 +683,6 @@ export function ContractsView({
         <ContractFormDialog
           key={editingContract?.id || 'new-contract'}
           contract={editingContract}
-          initialRoomId={editingContract ? undefined : requestedRoomId}
           rooms={rooms}
           tenants={tenants}
           pending={saveMutation.isPending}
@@ -610,7 +691,6 @@ export function ContractsView({
             if (!saveMutation.isPending) {
               setFormOpen(false);
               setEditingContract(undefined);
-              setRequestedRoomId(undefined);
             }
           }}
           onSave={async (values) => {

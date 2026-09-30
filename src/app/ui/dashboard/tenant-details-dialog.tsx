@@ -23,7 +23,7 @@ function DetailField({ icon, label, value, className = '' }: { icon: ReactNode; 
         <span className='text-emerald-600'>{icon}</span>
         {label}
       </p>
-      <div className='mt-1.5 break-words text-sm font-semibold whitespace-normal text-slate-700'>{value || 'Chưa bổ sung'}</div>
+      <div className='mt-1.5 wrap-break-word text-sm font-semibold whitespace-normal text-slate-700'>{value || 'Chưa bổ sung'}</div>
     </div>
   );
 }

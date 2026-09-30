@@ -1,12 +1,9 @@
 import {
-  CalendarDays,
-  Check,
   ChevronDown,
   CircleDollarSign,
   CreditCard,
   DoorOpen,
   Droplets,
-  FileText,
   MoreHorizontal,
   TrendingDown,
   TrendingUp,
@@ -19,22 +16,6 @@ import {
 import type { Room } from '@/backend/rooms/room.types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatMoney, StatCard, StatusBadge } from './shared';
-
-const invoices = [
-  { id: 'HD-0925-01', room: 'P.101', tenant: 'Nguyễn Minh Anh', amount: 4120000, date: '05/09/2025', status: 'Đã thanh toán' },
-  { id: 'HD-0925-02', room: 'P.102', tenant: 'Trần Quốc Huy', amount: 3780000, date: '05/09/2025', status: 'Chờ thanh toán' },
-  { id: 'HD-0925-03', room: 'P.201', tenant: 'Lê Thảo My', amount: 4450000, date: '04/09/2025', status: 'Đã thanh toán' },
-  { id: 'HD-0925-04', room: 'P.202', tenant: 'Phạm Gia Bảo', amount: 4030000, date: '03/09/2025', status: 'Quá hạn' },
-  { id: 'HD-0925-05', room: 'P.203', tenant: 'Vũ Khánh Linh', amount: 4260000, date: '02/09/2025', status: 'Đã thanh toán' }
-];
-
-const monthlyPaymentItems = [
-  { label: 'Tiền phòng', amount: 3500000 },
-  { label: 'Điện', amount: 420000 },
-  { label: 'Nước', amount: 200000 },
-  { label: 'Internet', amount: 100000 },
-  { label: 'Phát sinh', amount: 100000 }
-];
 
 function RevenueChart() {
   const data = [24, 34, 29, 42, 51, 45, 58, 54, 69, 62, 76, 72];
@@ -272,97 +253,6 @@ export function Overview({ rooms }: { rooms: Room[] }) {
         <Activity />
       </section>
     </>
-  );
-}
-
-function MonthlyPaymentInvoice() {
-  const total = monthlyPaymentItems.reduce((sum, item) => sum + item.amount, 0);
-
-  return (
-    <article className='card overflow-hidden'>
-      <div className='flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-r from-emerald-50/80 to-white px-5 py-5 sm:px-6'>
-        <div>
-          <p className='text-[10px] font-bold uppercase tracking-[.14em] text-emerald-700'>Nhà trọ Tam Kê</p>
-          <h2 className='mt-1 text-lg font-bold text-slate-900'>Hóa đơn thanh toán tháng 09/2026</h2>
-          <p className='mt-1 text-xs text-slate-500'>Phòng 1 · Nguyễn Văn An</p>
-        </div>
-        <div className='rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-right'>
-          <p className='text-[10px] font-semibold uppercase tracking-wide text-amber-700'>Hạn thanh toán</p>
-          <p className='mt-1 text-sm font-bold text-amber-800'>05/10/2026</p>
-        </div>
-      </div>
-
-      <Table className='text-left'>
-        <TableHeader>
-          <TableRow className='border-b border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400 hover:bg-slate-50/70'>
-            <TableHead className='px-5 py-3.5 font-semibold sm:px-6'>Khoản thanh toán</TableHead>
-            <TableHead className='px-5 py-3.5 text-right font-semibold sm:px-6'>Số tiền</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {monthlyPaymentItems.map((item) => (
-            <TableRow key={item.label} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/60'>
-              <TableCell className='px-5 py-3.5 font-medium text-slate-600 sm:px-6'>{item.label}</TableCell>
-              <TableCell className='px-5 py-3.5 text-right font-semibold text-slate-700 sm:px-6'>{formatMoney(item.amount)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-
-      <div className='flex items-center justify-between gap-4 border-t-2 border-emerald-100 bg-emerald-50/50 px-5 py-4 sm:px-6'>
-        <span className='text-sm font-bold text-slate-800'>Tổng thanh toán</span>
-        <span className='text-xl font-extrabold tracking-tight text-emerald-700'>{formatMoney(total)}</span>
-      </div>
-    </article>
-  );
-}
-
-export function InvoicesView({ query }: { query: string }) {
-  const filtered = invoices.filter((invoice) => `${invoice.id} ${invoice.room} ${invoice.tenant}`.toLowerCase().includes(query.toLowerCase()));
-  return (
-    <div className='space-y-4'>
-      <div className='grid gap-4 sm:grid-cols-3'>
-        <StatCard icon={FileText} label='Tổng hóa đơn' value='8' note='Tháng 09/2025' tone='blue' />
-        <StatCard icon={Check} label='Đã thanh toán' value='24,8tr' note='6 hóa đơn' tone='green' />
-        <StatCard icon={CalendarDays} label='Chờ thu' value='8,1tr' note='2 hóa đơn' tone='orange' />
-      </div>
-      <MonthlyPaymentInvoice />
-      <div className='card overflow-hidden'>
-        <Table className='min-w-190 text-left'>
-          <TableHeader>
-            <TableRow className='border-b border-slate-100 bg-slate-50/60 text-[11px] uppercase tracking-wider text-slate-400 hover:bg-slate-50/60'>
-              <TableHead className='px-6 py-4'>Mã hóa đơn</TableHead>
-              <TableHead className='px-5 py-4'>Phòng & người thuê</TableHead>
-              <TableHead className='px-5 py-4'>Ngày tạo</TableHead>
-              <TableHead className='px-5 py-4'>Số tiền</TableHead>
-              <TableHead className='px-5 py-4'>Trạng thái</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map((invoice) => (
-              <TableRow key={invoice.id} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/70'>
-                <TableCell className='px-6 py-4 font-semibold text-slate-700'>{invoice.id}</TableCell>
-                <TableCell className='px-5 py-4'>
-                  <p className='font-semibold text-slate-800'>{invoice.room}</p>
-                  <p className='mt-0.5 text-xs text-slate-400'>{invoice.tenant}</p>
-                </TableCell>
-                <TableCell className='px-5 py-4 text-slate-500'>{invoice.date}</TableCell>
-                <TableCell className='px-5 py-4 font-bold text-slate-700'>{formatMoney(invoice.amount)}</TableCell>
-                <TableCell className='px-5 py-4'>
-                  <StatusBadge status={invoice.status} />
-                </TableCell>
-                <TableCell className='px-5'>
-                  <button aria-label='Tùy chọn'>
-                    <MoreHorizontal size={18} className='text-slate-400' />
-                  </button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
   );
 }
 
