@@ -1,11 +1,15 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, DoorOpen, FilePenLine, FilePlus2, Pencil, Trash2, UsersRound } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight, DoorOpen, FilePenLine, FilePlus2, Pencil, ReceiptText, Trash2, UsersRound } from 'lucide-react';
 import { useState } from 'react';
+import type { Invoice, InvoiceListResult } from '@/backend/invoices/invoice.types';
 import type { Room, RoomStatus } from '@/backend/rooms/room.types';
 import type { Tenant } from '@/backend/tenants/tenant.types';
+import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RoomContractDialog } from './contracts-view';
+import { invoicePeriodLabel, RoomInvoiceDialog, UPCOMING_INVOICE_PERIOD } from './invoices-view';
 import { DeleteRoomModal, EditRoomModal } from './room-modals';
 import { formatMoney, roomStatusLabel, StatusBadge } from './shared';
 import { getRoomStatusText } from './contanst';
@@ -17,6 +21,22 @@ const roomFilters: { value: 'Tất cả phòng' | RoomStatus; label: string }[] 
   { value: 'RESERVED', label: 'Đã đặt' },
   { value: 'MAINTENANCE', label: 'Bảo trì' }
 ];
+
+async function getInvoices(): Promise<InvoiceListResult> {
+  const response = await fetch('/api/invoices?limit=100', { cache: 'no-store' });
+  const payload = (await response.json()) as InvoiceListResult & { error?: string };
+  if (!response.ok) throw new Error(payload.error || 'Không thể tải danh sách hóa đơn.');
+  return payload;
+}
+
+function InvoiceBadge({ invoice, loading, error }: { invoice?: Invoice; loading: boolean; error: boolean }) {
+  if (loading) return <Badge variant='outline'>Đang tải...</Badge>;
+  if (error) return <Badge variant='destructive'>Không tải được</Badge>;
+  if (!invoice) return <Badge variant='secondary'>Chưa có hóa đơn</Badge>;
+  const labels = { PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán', OVERDUE: 'Quá hạn' } as const;
+  const variants = { PENDING: 'warning', PAID: 'success', OVERDUE: 'destructive' } as const;
+  return <Badge variant={variants[invoice.status]}>{labels[invoice.status]}</Badge>;
+}
 
 export function RoomsView({
   rooms,
@@ -36,6 +56,12 @@ export function RoomsView({
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
   const [contractRoom, setContractRoom] = useState<Room | null>(null);
+  const [invoiceRoom, setInvoiceRoom] = useState<Room | null>(null);
+  const invoicesQuery = useQuery({ queryKey: ['invoices'], queryFn: getInvoices });
+  const invoices = invoicesQuery.data?.data || [];
+  const invoiceByRoom = new Map(
+    invoices.filter((invoice) => invoice.period === UPCOMING_INVOICE_PERIOD).map((invoice) => [invoice.roomId, invoice])
+  );
   const pageSize = 5;
   const filtered = rooms.filter(
     (room) =>
@@ -73,7 +99,7 @@ export function RoomsView({
           </div>
           <span className='rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold text-slate-500'>{filtered.length} phòng</span>
         </div>
-        <Table className='min-w-235 text-left'>
+        <Table className='min-w-315 text-left'>
           <TableHeader>
             <TableRow className='border-b border-slate-100 bg-slate-50/70 text-[10px] uppercase tracking-[.08em] text-slate-400 hover:bg-slate-50/70'>
               <TableHead className='px-6 py-3.5 font-semibold'>Phòng</TableHead>
@@ -82,7 +108,8 @@ export function RoomsView({
               <TableHead className='px-5 py-3.5 font-semibold'>Giá thuê</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Ngày bắt đầu thuê</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Trạng thái</TableHead>
-              <TableHead className='w-52 px-5 py-3.5'>
+              <TableHead className='px-5 py-3.5 font-semibold'>Hóa đơn {invoicePeriodLabel(UPCOMING_INVOICE_PERIOD)}</TableHead>
+              <TableHead className='w-86 px-5 py-3.5'>
                 <span className='sr-only'>Thao tác</span>
               </TableHead>
             </TableRow>
@@ -124,7 +151,25 @@ export function RoomsView({
                   <StatusBadge status={room.status} />
                 </TableCell>
                 <TableCell className='px-5 py-4'>
+                  <InvoiceBadge
+                    invoice={invoiceByRoom.get(room.id)}
+                    loading={invoicesQuery.isLoading}
+                    error={invoicesQuery.isError}
+                  />
+                </TableCell>
+                <TableCell className='px-5 py-4'>
                   <div className='flex items-center gap-1'>
+                    <button
+                      type='button'
+                      onClick={() => setInvoiceRoom(room)}
+                      disabled={invoicesQuery.isLoading || invoicesQuery.isError || room.people === 0 || room.status === 'MAINTENANCE'}
+                      aria-label={`${invoiceByRoom.has(room.id) ? 'Sửa' : 'Tạo'} hóa đơn cho ${room.name}`}
+                      title={room.people === 0 ? 'Phòng chưa có người thuê' : `${invoiceByRoom.has(room.id) ? 'Sửa' : 'Tạo'} hóa đơn cho ${room.name}`}
+                      className='inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[10px] font-semibold text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-40'
+                    >
+                      <ReceiptText size={15} />
+                      <span>{invoiceByRoom.has(room.id) ? 'Sửa hóa đơn' : 'Tạo hóa đơn'}</span>
+                    </button>
                     <button
                       type='button'
                       onClick={() => setContractRoom(room)}
@@ -201,6 +246,14 @@ export function RoomsView({
       </div>
       {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onSave={onUpdate} />}
       {contractRoom && <RoomContractDialog room={contractRoom} rooms={rooms} tenants={tenants} onClose={() => setContractRoom(null)} />}
+      {invoiceRoom && (
+        <RoomInvoiceDialog
+          room={invoiceRoom}
+          rooms={rooms}
+          invoices={invoices}
+          onClose={() => setInvoiceRoom(null)}
+        />
+      )}
       {deletingRoom && (
         <DeleteRoomModal
           room={deletingRoom}
