@@ -36,7 +36,7 @@ const MONTH_OPTIONS = Array.from({ length: 12 }, (_, index) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return { value: `${date.getFullYear()}-${month}`, label: `${month}/${date.getFullYear()}` };
 });
-const DEFAULT_PERIOD = MONTH_OPTIONS[0].value;
+export const UPCOMING_INVOICE_PERIOD = MONTH_OPTIONS[0].value;
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -46,7 +46,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-function periodLabel(period: string) {
+export function invoicePeriodLabel(period: string) {
   const [year, month] = period.split('-');
   return `${month}/${year}`;
 }
@@ -141,6 +141,8 @@ function InvoiceFormDialog({
   rooms,
   invoices,
   invoice,
+  initialRoomId,
+  lockRoom,
   pending,
   error,
   onClose,
@@ -149,12 +151,14 @@ function InvoiceFormDialog({
   rooms: Room[];
   invoices: Invoice[];
   invoice?: Invoice;
+  initialRoomId?: string;
+  lockRoom?: boolean;
   pending: boolean;
   error?: string;
   onClose: () => void;
   onSave: (input: CreateInvoiceInput) => Promise<void>;
 }) {
-  const initialPeriod = invoice?.period || DEFAULT_PERIOD;
+  const initialPeriod = invoice?.period || UPCOMING_INVOICE_PERIOD;
   const billableRooms = useMemo(() => rooms.filter((room) => room.people > 0 && room.status !== 'MAINTENANCE'), [rooms]);
   const roomsForPeriod = (period: string) =>
     billableRooms.filter(
@@ -162,7 +166,9 @@ function InvoiceFormDialog({
     );
   const initialRooms = roomsForPeriod(initialPeriod);
   const [period, setPeriod] = useState(initialPeriod);
-  const [roomId, setRoomId] = useState(invoice?.roomId || initialRooms[0]?.id || '');
+  const [roomId, setRoomId] = useState(
+    invoice?.roomId || initialRooms.find((room) => room.id === initialRoomId)?.id || initialRooms[0]?.id || ''
+  );
   const [dueDate, setDueDate] = useState(invoice?.dueDate.slice(0, 10) || dueDateFromPeriod(initialPeriod));
   const [electricityOld, setElectricityOld] = useState(invoice ? String(invoice.electricity.oldValue) : '');
   const [electricityNew, setElectricityNew] = useState(invoice ? String(invoice.electricity.newValue) : '');
@@ -242,7 +248,7 @@ function InvoiceFormDialog({
                 </div>
                 <div>
                   <label className='field-label'>Phòng *</label>
-                  <Select value={roomId} onValueChange={setRoomId} disabled={!availableRooms.length}>
+                  <Select value={roomId} onValueChange={setRoomId} disabled={lockRoom || !availableRooms.length}>
                     <SelectTrigger className='bg-white'>
                       <SelectValue placeholder='Không còn phòng phù hợp' />
                     </SelectTrigger>
@@ -259,7 +265,7 @@ function InvoiceFormDialog({
                 <dl className='mt-4 grid gap-3 text-xs sm:grid-cols-2'>
                   <div><dt className='text-slate-400'>Người thuê</dt><dd className='mt-1 font-bold text-slate-700'>{selectedRoom.tenant}</dd></div>
                   <div><dt className='text-slate-400'>Tiền phòng</dt><dd className='mt-1 font-bold text-emerald-700'>{formatMoney(selectedRoom.price)}</dd></div>
-                  <div><dt className='text-slate-400'>Kỳ thanh toán</dt><dd className='mt-1 font-bold text-slate-700'>{periodLabel(period)}</dd></div>
+                  <div><dt className='text-slate-400'>Kỳ thanh toán</dt><dd className='mt-1 font-bold text-slate-700'>{invoicePeriodLabel(period)}</dd></div>
                   <div>
                     <label className='field-label'>Hạn thanh toán</label>
                     <Input type='date' value={dueDate} onChange={(event) => setDueDate(event.target.value)} className='mt-1 bg-white' />
@@ -322,7 +328,7 @@ function InvoiceFormDialog({
 
           <aside className='h-fit rounded-2xl border border-slate-200 bg-slate-50/70 p-5 lg:sticky lg:top-0'>
             <p className='text-[10px] font-bold uppercase tracking-[.14em] text-emerald-700'>Nhà trọ Tam Kê</p>
-            <h3 className='mt-1 text-lg font-bold text-slate-900'>Hóa đơn kỳ {periodLabel(period)}</h3>
+            <h3 className='mt-1 text-lg font-bold text-slate-900'>Hóa đơn kỳ {invoicePeriodLabel(period)}</h3>
             <p className='mt-1 text-xs text-slate-500'>{selectedRoom ? `${selectedRoom.name} · ${selectedRoom.tenant}` : 'Chưa chọn phòng'}</p>
             <div className='my-5 border-t border-dashed border-slate-300' />
             <div className='space-y-3 text-xs'>
@@ -359,6 +365,52 @@ function InvoiceFormDialog({
   );
 }
 
+export function RoomInvoiceDialog({
+  room,
+  rooms,
+  invoices,
+  onClose
+}: {
+  room: Room;
+  rooms: Room[];
+  invoices: Invoice[];
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const currentInvoice = invoices.find(
+    (invoice) => invoice.roomId === room.id && invoice.period === UPCOMING_INVOICE_PERIOD
+  );
+  const saveMutation = useMutation({
+    mutationFn: (input: CreateInvoiceInput) =>
+      request<{ data: Invoice }>(currentInvoice ? `/api/invoices/${currentInvoice.id}` : '/api/invoices', {
+        method: currentInvoice ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input)
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      onClose();
+    }
+  });
+
+  return (
+    <InvoiceFormDialog
+      key={currentInvoice?.id || room.id}
+      rooms={rooms}
+      invoices={invoices}
+      invoice={currentInvoice}
+      initialRoomId={room.id}
+      lockRoom
+      pending={saveMutation.isPending}
+      error={saveMutation.error instanceof Error ? saveMutation.error.message : undefined}
+      onClose={onClose}
+      onSave={async (input) => {
+        await saveMutation.mutateAsync(input);
+      }}
+    />
+  );
+}
+
 function InvoiceDetailsDialog({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
   const rows = [
     ['Tiền phòng', invoice.rentAmount],
@@ -371,7 +423,7 @@ function InvoiceDetailsDialog({ invoice, onClose }: { invoice: Invoice; onClose:
       <DialogContent className='max-w-2xl'>
         <DialogHeader className='pr-10'>
           <DialogTitle>Chi tiết hóa đơn {invoice.code}</DialogTitle>
-          <DialogDescription>{invoice.roomName} · {invoice.tenantName} · Kỳ {periodLabel(invoice.period)}</DialogDescription>
+          <DialogDescription>{invoice.roomName} · {invoice.tenantName} · Kỳ {invoicePeriodLabel(invoice.period)}</DialogDescription>
         </DialogHeader>
         <div className='mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-xs sm:grid-cols-3'>
           <div><p className='text-slate-400'>Ngày tạo</p><p className='mt-1 font-bold text-slate-700'>{formatDate(invoice.createdAt)}</p></div>
@@ -429,7 +481,7 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
   });
   const invoices = useMemo(() => invoicesQuery.data?.data || [], [invoicesQuery.data?.data]);
   const search = query.trim().toLowerCase();
-  const filtered = invoices.filter((invoice) => `${invoice.code} ${invoice.roomName} ${invoice.tenantName} ${periodLabel(invoice.period)}`.toLowerCase().includes(search));
+  const filtered = invoices.filter((invoice) => `${invoice.code} ${invoice.roomName} ${invoice.tenantName} ${invoicePeriodLabel(invoice.period)}`.toLowerCase().includes(search));
   const pendingAmount = invoices.filter((invoice) => invoice.status === 'PENDING').reduce((sum, invoice) => sum + invoice.totalAmount, 0);
 
   if (invoicesQuery.isLoading) return <div className='card grid min-h-64 place-items-center'><Spinner className='size-6 text-emerald-700' /></div>;
@@ -467,7 +519,7 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
               <TableRow key={invoice.id} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/70'>
                 <TableCell className='px-6 py-4 font-semibold text-slate-700'>{invoice.code}</TableCell>
                 <TableCell className='px-5 py-4'><p className='font-semibold text-slate-800'>{invoice.roomName}</p><p className='mt-0.5 text-xs text-slate-400'>{invoice.tenantName}</p></TableCell>
-                <TableCell className='px-5 py-4 font-medium text-slate-600'>{periodLabel(invoice.period)}</TableCell>
+                <TableCell className='px-5 py-4 font-medium text-slate-600'>{invoicePeriodLabel(invoice.period)}</TableCell>
                 <TableCell className='px-5 py-4 text-slate-500'>{formatDate(invoice.dueDate)}</TableCell>
                 <TableCell className='px-5 py-4 font-bold text-slate-700'>{formatMoney(invoice.totalAmount)}</TableCell>
                 <TableCell className='px-5 py-4'>{statusBadge(invoice)}</TableCell>
