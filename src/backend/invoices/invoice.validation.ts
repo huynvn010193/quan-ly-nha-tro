@@ -8,6 +8,16 @@ export class InvoiceValidationError extends Error {
   }
 }
 
+export function validateInvoicePaymentIds(payload: unknown): string[] {
+  if (!isRecord(payload) || !Array.isArray(payload.ids) || payload.ids.length === 0 || payload.ids.length > 100) {
+    throw new InvoiceValidationError('Vui lòng chọn từ 1 đến 100 hóa đơn.');
+  }
+  return [...new Set(payload.ids.map((id) => {
+    if (typeof id !== 'string' || !ObjectId.isValid(id)) throw new InvoiceValidationError('Mã hóa đơn không hợp lệ.');
+    return id;
+  }))];
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

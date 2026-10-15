@@ -1,16 +1,17 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, DoorOpen, FilePenLine, FilePlus2, Pencil, ReceiptText, Trash2, UsersRound } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CircleAlert, CircleCheck, DoorOpen, FilePenLine, FilePlus2, Pencil, ReceiptText, Trash2, UsersRound } from 'lucide-react';
 import { useState } from 'react';
-import type { Invoice, InvoiceListResult } from '@/backend/invoices/invoice.types';
+import type { InvoiceListResult, RoomInvoiceSummary } from '@/backend/invoices/invoice.types';
 import type { Room, RoomStatus } from '@/backend/rooms/room.types';
 import type { Tenant } from '@/backend/tenants/tenant.types';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RoomContractDialog } from './contracts-view';
-import { invoicePeriodLabel, RoomInvoiceDialog, UPCOMING_INVOICE_PERIOD } from './invoices-view';
+import { RoomInvoiceDialog, UPCOMING_INVOICE_PERIOD } from './invoices-view';
 import { DeleteRoomModal, EditRoomModal } from './room-modals';
+import { RoomDebtDialog } from './room-debt-dialog';
 import { formatMoney, roomStatusLabel, StatusBadge } from './shared';
 import { getRoomStatusText } from './contanst';
 
@@ -29,13 +30,33 @@ async function getInvoices(): Promise<InvoiceListResult> {
   return payload;
 }
 
-function InvoiceBadge({ invoice, loading, error }: { invoice?: Invoice; loading: boolean; error: boolean }) {
+async function getInvoiceSummaries(): Promise<{ data: RoomInvoiceSummary[] }> {
+  const response = await fetch('/api/invoices/room-summary', { cache: 'no-store' });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || 'Không thể tải tổng hợp hóa đơn.');
+  return payload;
+}
+
+function InvoiceBadge({ summary, loading, error }: { summary?: RoomInvoiceSummary; loading: boolean; error: boolean }) {
   if (loading) return <Badge variant='outline'>Đang tải...</Badge>;
   if (error) return <Badge variant='destructive'>Không tải được</Badge>;
-  if (!invoice) return <Badge variant='secondary'>Chưa có hóa đơn</Badge>;
-  const labels = { PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán', OVERDUE: 'Quá hạn' } as const;
-  const variants = { PENDING: 'warning', PAID: 'success', OVERDUE: 'destructive' } as const;
-  return <Badge variant={variants[invoice.status]}>{labels[invoice.status]}</Badge>;
+  if (!summary?.invoiceCount) return <Badge variant='secondary'>Chưa có hóa đơn</Badge>;
+  if (summary.unpaidCount === 0) return <Badge variant='success'><CircleCheck /> Đã thanh toán</Badge>;
+  const multiple = summary.unpaidCount > 1;
+  return (
+    <div className='space-y-1.5'>
+      <Badge
+        variant={multiple ? 'destructive' : 'warning'}
+        className={multiple ? 'border-rose-100 bg-rose-100 text-red-600' : 'border-orange-100 bg-orange-100 text-orange-600'}
+      >
+        {multiple && <CircleAlert />}
+        {summary.unpaidCount} hóa đơn chưa trả
+      </Badge>
+      <p className={`font-semibold tabular-nums ${multiple ? 'text-red-600' : 'text-slate-900'}`}>
+        {formatMoney(summary.unpaidAmount)}
+      </p>
+    </div>
+  );
 }
 
 export function RoomsView({
@@ -57,7 +78,10 @@ export function RoomsView({
   const [deletingRoom, setDeletingRoom] = useState<Room | null>(null);
   const [contractRoom, setContractRoom] = useState<Room | null>(null);
   const [invoiceRoom, setInvoiceRoom] = useState<Room | null>(null);
+  const [debtRoom, setDebtRoom] = useState<Room | null>(null);
   const invoicesQuery = useQuery({ queryKey: ['invoices'], queryFn: getInvoices });
+  const summariesQuery = useQuery({ queryKey: ['invoices', 'room-summary'], queryFn: getInvoiceSummaries });
+  const summaryByRoom = new Map(summariesQuery.data?.data.map((summary) => [summary.roomId, summary]));
   const invoices = invoicesQuery.data?.data || [];
   const invoiceByRoom = new Map(
     invoices.filter((invoice) => invoice.period === UPCOMING_INVOICE_PERIOD).map((invoice) => [invoice.roomId, invoice])
@@ -108,7 +132,7 @@ export function RoomsView({
               <TableHead className='px-5 py-3.5 font-semibold'>Giá thuê</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Ngày bắt đầu thuê</TableHead>
               <TableHead className='px-5 py-3.5 font-semibold'>Trạng thái</TableHead>
-              <TableHead className='px-5 py-3.5 font-semibold'>Hóa đơn {invoicePeriodLabel(UPCOMING_INVOICE_PERIOD)}</TableHead>
+              <TableHead className='px-5 py-3.5 text-center font-semibold'>Hóa đơn</TableHead>
               <TableHead className='w-86 px-5 py-3.5'>
                 <span className='sr-only'>Thao tác</span>
               </TableHead>
@@ -150,12 +174,22 @@ export function RoomsView({
                 <TableCell className='px-5 py-4'>
                   <StatusBadge status={room.status} />
                 </TableCell>
-                <TableCell className='px-5 py-4'>
+                <TableCell className='px-5 py-4 text-center'>
                   <InvoiceBadge
-                    invoice={invoiceByRoom.get(room.id)}
-                    loading={invoicesQuery.isLoading}
-                    error={invoicesQuery.isError}
+                    summary={summaryByRoom.get(room.id)}
+                    loading={summariesQuery.isLoading}
+                    error={summariesQuery.isError}
                   />
+                  {!summariesQuery.isLoading && !summariesQuery.isError && Boolean(summaryByRoom.get(room.id)?.invoiceCount) && (
+                    <button
+                      type='button'
+                      onClick={() => setDebtRoom(room)}
+                      aria-label={`Chi tiết công nợ ${room.name}`}
+                      className='mx-auto mt-2 block text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline'
+                    >
+                      Chi tiết
+                    </button>
+                  )}
                 </TableCell>
                 <TableCell className='px-5 py-4'>
                   <div className='flex items-center gap-1'>
@@ -245,6 +279,7 @@ export function RoomsView({
         )}
       </div>
       {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onSave={onUpdate} />}
+      {debtRoom && <RoomDebtDialog room={debtRoom} onClose={() => setDebtRoom(null)} />}
       {contractRoom && <RoomContractDialog room={contractRoom} rooms={rooms} tenants={tenants} onClose={() => setContractRoom(null)} />}
       {invoiceRoom && (
         <RoomInvoiceDialog

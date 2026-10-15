@@ -61,8 +61,61 @@ function dueDateFromPeriod(period: string) {
 
 function statusBadge(invoice: Invoice) {
   const labels = { PENDING: 'Chờ thanh toán', PAID: 'Đã thanh toán', OVERDUE: 'Quá hạn' } as const;
-  const variants = { PENDING: 'warning', PAID: 'success', OVERDUE: 'destructive' } as const;
+  const variants = { PENDING: 'warning', PAID: 'info', OVERDUE: 'destructive' } as const;
   return <Badge variant={variants[invoice.status]}>{labels[invoice.status]}</Badge>;
+}
+
+export function InvoicePaymentButton({ invoice, disabled = false, menuItem = false }: { invoice: Invoice; disabled?: boolean; menuItem?: boolean }) {
+  const queryClient = useQueryClient();
+  const paymentMutation = useMutation({
+    mutationFn: () => request<{ data: Invoice }>(`/api/invoices/${invoice.id}/payment`, { method: 'PATCH' }),
+    onSuccess: async ({ data }) => {
+      queryClient.setQueryData<InvoiceListResult>(['invoices'], (current) =>
+        current ? { ...current, data: current.data.map((item) => item.id === data.id ? data : item) } : current
+      );
+      await queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    }
+  });
+
+  if (invoice.status === 'PAID') return null;
+
+  if (menuItem) {
+    return (
+      <>
+        <DropdownMenuItem
+          disabled={disabled || paymentMutation.isPending}
+          onSelect={(event) => {
+            event.preventDefault();
+            paymentMutation.mutate();
+          }}
+          className='text-blue-600 focus:bg-blue-50 focus:text-blue-700'
+        >
+          {paymentMutation.isPending ? 'Đang cập nhật...' : 'Ghi nhận thanh toán'}
+        </DropdownMenuItem>
+        {paymentMutation.error && (
+          <p role='alert' className='max-w-64 px-2 py-1 text-xs text-rose-600'>{paymentMutation.error.message}</p>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className='flex flex-col items-end gap-1'>
+      <button
+        type='button'
+        onClick={() => paymentMutation.mutate()}
+        disabled={disabled || paymentMutation.isPending}
+        aria-label={`Ghi nhận thanh toán hóa đơn ${invoice.code}`}
+        className='inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-blue-600 px-4 text-[11px] font-bold text-white shadow-md shadow-blue-600/15 transition hover:bg-blue-700 active:scale-[.98] disabled:opacity-50'
+      >
+        {paymentMutation.isPending && <Spinner />}
+        {paymentMutation.isPending ? 'Đang cập nhật...' : 'Ghi nhận thanh toán'}
+      </button>
+      {paymentMutation.error && (
+        <p role='alert' className='max-w-64 text-xs text-rose-600'>{paymentMutation.error.message}</p>
+      )}
+    </div>
+  );
 }
 
 function UtilitySection({
@@ -354,6 +407,7 @@ function InvoiceFormDialog({
 
         {(formError || error) && <p role='alert' className='mx-6 mb-4 rounded-xl bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-600'>{formError || error}</p>}
         <DialogFooter className='border-t border-slate-100 px-6 py-4'>
+          {invoice && <InvoicePaymentButton invoice={invoice} disabled={pending} />}
           <button type='button' onClick={onClose} disabled={pending} className='soft-button px-5 disabled:opacity-50'>Hủy</button>
           <button type='button' onClick={() => void submit()} disabled={pending || !selectedRoom} className='primary-button disabled:opacity-50'>
             {pending ? <Spinner /> : invoice ? <FilePenLine size={16} /> : <FilePlus2 size={16} />}
@@ -442,6 +496,9 @@ function InvoiceDetailsDialog({ invoice, onClose }: { invoice: Invoice; onClose:
             <span className='text-xl font-extrabold text-emerald-700'>{formatMoney(invoice.totalAmount)}</span>
           </div>
         </div>
+        <DialogFooter className='mt-5'>
+          <InvoicePaymentButton invoice={invoice} />
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -454,6 +511,7 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
   const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null);
   const [deletingInvoice, setDeletingInvoice] = useState<Invoice | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const invoicesQuery = useQuery({
     queryKey: ['invoices'],
     queryFn: () => request<InvoiceListResult>('/api/invoices?limit=100', { cache: 'no-store' })
@@ -479,21 +537,61 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
       setDeletingInvoice(null);
     }
   });
+  const bulkPaymentMutation = useMutation({
+    mutationFn: (ids: string[]) => request<{ data: Invoice[]; updatedCount: number }>('/api/invoices/payment', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids })
+    }),
+    onSuccess: async ({ data, updatedCount }) => {
+      const updatedById = new Map(data.map((invoice) => [invoice.id, invoice]));
+      queryClient.setQueryData<InvoiceListResult>(['invoices'], (current) =>
+        current ? { ...current, data: current.data.map((invoice) => updatedById.get(invoice.id) || invoice) } : current
+      );
+      setSelectedIds([]);
+      setSuccessMessage(`Đã đánh dấu thanh toán cho ${updatedCount} hóa đơn.`);
+      await queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    }
+  });
   const invoices = useMemo(() => invoicesQuery.data?.data || [], [invoicesQuery.data?.data]);
   const search = query.trim().toLowerCase();
   const filtered = invoices.filter((invoice) => `${invoice.code} ${invoice.roomName} ${invoice.tenantName} ${invoicePeriodLabel(invoice.period)}`.toLowerCase().includes(search));
+  const selectableInvoices = filtered.filter((invoice) => invoice.status !== 'PAID');
+  const selectedInvoices = selectableInvoices.filter((invoice) => selectedIds.includes(invoice.id));
+  const allSelected = selectableInvoices.length > 0 && selectedInvoices.length === selectableInvoices.length;
   const pendingAmount = invoices.filter((invoice) => invoice.status === 'PENDING').reduce((sum, invoice) => sum + invoice.totalAmount, 0);
 
   if (invoicesQuery.isLoading) return <div className='card grid min-h-64 place-items-center'><Spinner className='size-6 text-emerald-700' /></div>;
 
   return (
     <div className='space-y-4'>
-      <div className='flex justify-end'>
+      <div className='flex flex-wrap items-center justify-end gap-3'>
+        {selectedInvoices.length > 0 && (
+          <>
+            <span className='text-xs font-medium text-slate-500'>Đã chọn {selectedInvoices.length} hóa đơn</span>
+            <button
+              type='button'
+              disabled={bulkPaymentMutation.isPending}
+              onClick={() => {
+                setSuccessMessage('');
+                bulkPaymentMutation.mutate(selectedInvoices.map((invoice) => invoice.id));
+              }}
+              className='inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-[11px] font-bold text-white transition hover:bg-blue-700 disabled:opacity-50'
+            >
+              {bulkPaymentMutation.isPending && <Spinner />}
+              {bulkPaymentMutation.isPending ? 'Đang cập nhật...' : 'Ghi nhận thanh toán'}
+            </button>
+          </>
+        )}
         <button type='button' onClick={() => { saveMutation.reset(); setSuccessMessage(''); setEditingInvoice(undefined); setFormOpen(true); }} className='primary-button'>
           <FilePlus2 size={16} /> Tạo hóa đơn
         </button>
       </div>
       {successMessage && <div className='rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-700'>{successMessage}</div>}
+      {bulkPaymentMutation.error && <p role='alert' className='rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-600'>{bulkPaymentMutation.error.message}</p>}
       {invoicesQuery.error && (
         <div className='flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs text-rose-600'>
           <span>{invoicesQuery.error instanceof Error ? invoicesQuery.error.message : 'Không thể tải hóa đơn.'}</span>
@@ -509,6 +607,17 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
         <Table className='min-w-205 text-left'>
           <TableHeader>
             <TableRow className='border-b border-slate-100 bg-slate-50/60 text-[11px] uppercase tracking-wider text-slate-400 hover:bg-slate-50/60'>
+              <TableHead className='w-12 px-4 py-4'>
+                <input
+                  type='checkbox'
+                  aria-label='Chọn tất cả hóa đơn chưa thanh toán đang hiển thị'
+                  checked={allSelected}
+                  ref={(element) => { if (element) element.indeterminate = selectedInvoices.length > 0 && !allSelected; }}
+                  disabled={bulkPaymentMutation.isPending || selectableInvoices.length === 0}
+                  onChange={(event) => setSelectedIds(event.target.checked ? selectableInvoices.map((invoice) => invoice.id) : [])}
+                  className='size-4 cursor-pointer rounded border-slate-300 accent-blue-600 disabled:cursor-not-allowed disabled:opacity-40'
+                />
+              </TableHead>
               <TableHead className='px-6 py-4'>Mã hóa đơn</TableHead><TableHead className='px-5 py-4'>Phòng & người thuê</TableHead>
               <TableHead className='px-5 py-4'>Kỳ hóa đơn</TableHead><TableHead className='px-5 py-4'>Hạn thanh toán</TableHead>
               <TableHead className='px-5 py-4'>Số tiền</TableHead><TableHead className='px-5 py-4'>Trạng thái</TableHead><TableHead className='w-16' />
@@ -517,6 +626,16 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
           <TableBody>
             {filtered.map((invoice) => (
               <TableRow key={invoice.id} className='border-b border-slate-50 text-sm last:border-0 hover:bg-slate-50/70'>
+                <TableCell className='px-4 py-4'>
+                  <input
+                    type='checkbox'
+                    aria-label={`Chọn hóa đơn ${invoice.code}`}
+                    checked={invoice.status !== 'PAID' && selectedIds.includes(invoice.id)}
+                    disabled={invoice.status === 'PAID' || bulkPaymentMutation.isPending}
+                    onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, invoice.id] : current.filter((id) => id !== invoice.id))}
+                    className='size-4 cursor-pointer rounded border-slate-300 accent-blue-600 disabled:cursor-not-allowed disabled:opacity-40'
+                  />
+                </TableCell>
                 <TableCell className='px-6 py-4 font-semibold text-slate-700'>{invoice.code}</TableCell>
                 <TableCell className='px-5 py-4'><p className='font-semibold text-slate-800'>{invoice.roomName}</p><p className='mt-0.5 text-xs text-slate-400'>{invoice.tenantName}</p></TableCell>
                 <TableCell className='px-5 py-4 font-medium text-slate-600'>{invoicePeriodLabel(invoice.period)}</TableCell>
@@ -524,15 +643,18 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
                 <TableCell className='px-5 py-4 font-bold text-slate-700'>{formatMoney(invoice.totalAmount)}</TableCell>
                 <TableCell className='px-5 py-4'>{statusBadge(invoice)}</TableCell>
                 <TableCell className='px-5'>
+                  <div className='flex items-center justify-end gap-2'>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild><button aria-label={`Thao tác hóa đơn ${invoice.code}`} className='grid size-8 place-items-center rounded-lg text-slate-400 hover:bg-white hover:text-emerald-700'><MoreHorizontal size={18} /></button></DropdownMenuTrigger>
                     <DropdownMenuContent align='end'>
+                      <InvoicePaymentButton invoice={invoice} menuItem />
                       <DropdownMenuItem onSelect={() => setViewingInvoice(invoice)}><Eye /> Xem hóa đơn</DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => { saveMutation.reset(); setEditingInvoice(invoice); setFormOpen(true); }}><FilePenLine /> Chỉnh sửa</DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => setDeletingInvoice(invoice)} className='text-rose-600 focus:bg-rose-50 focus:text-rose-700'><Trash2 /> Xóa hóa đơn</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -543,13 +665,13 @@ export function InvoicesView({ rooms, query }: { rooms: Room[]; query: string })
 
       {formOpen && (
         <InvoiceFormDialog
-          key={editingInvoice?.id || 'new-invoice'} rooms={rooms} invoices={invoices} invoice={editingInvoice}
+          key={editingInvoice?.id || 'new-invoice'} rooms={rooms} invoices={invoices} invoice={invoices.find((item) => item.id === editingInvoice?.id) || editingInvoice}
           pending={saveMutation.isPending} error={saveMutation.error instanceof Error ? saveMutation.error.message : undefined}
           onClose={() => { if (!saveMutation.isPending) { setFormOpen(false); setEditingInvoice(undefined); } }}
           onSave={async (input) => { await saveMutation.mutateAsync(input); }}
         />
       )}
-      {viewingInvoice && <InvoiceDetailsDialog invoice={viewingInvoice} onClose={() => setViewingInvoice(null)} />}
+      {viewingInvoice && <InvoiceDetailsDialog invoice={invoices.find((item) => item.id === viewingInvoice.id) || viewingInvoice} onClose={() => setViewingInvoice(null)} />}
       <Dialog open={Boolean(deletingInvoice)} onOpenChange={(open) => !open && !deleteMutation.isPending && setDeletingInvoice(null)}>
         <DialogContent className='max-w-md' showCloseButton={!deleteMutation.isPending}>
           <DialogHeader className='pr-10'><DialogTitle>Xóa hóa đơn?</DialogTitle><DialogDescription>Hóa đơn <b className='text-slate-700'>{deletingInvoice?.code}</b> sẽ bị xóa vĩnh viễn và phòng có thể được lập lại hóa đơn cho tháng này.</DialogDescription></DialogHeader>
