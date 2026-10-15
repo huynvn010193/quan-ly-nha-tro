@@ -52,3 +52,10 @@ export type InvoiceListResult = {
     totalPages: number;
   };
 };
+
+export type RoomInvoiceSummary = {
+  roomId: string;
+  invoiceCount: number;
+  unpaidCount: number;
+  unpaidAmount: number;
+};

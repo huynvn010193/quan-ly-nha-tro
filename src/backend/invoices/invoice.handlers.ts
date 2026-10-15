@@ -1,5 +1,32 @@
 import { addInvoice, editInvoice, getInvoice, getInvoiceList, removeInvoice } from './invoice.service';
-import { InvoiceValidationError } from './invoice.validation';
+import { InvoiceValidationError, validateInvoicePaymentIds } from './invoice.validation';
+import { getRoomInvoiceSummaries, markInvoicePaid, markInvoicesPaid } from './invoice.repository';
+
+export async function getRoomInvoiceSummariesHandler() {
+  try {
+    return Response.json({ data: await getRoomInvoiceSummaries() });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function markInvoicesPaidHandler(request: Request) {
+  try {
+    const ids = validateInvoicePaymentIds(await request.json());
+    return Response.json(await markInvoicesPaid(ids));
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function markInvoicePaidHandler(id: string) {
+  try {
+    const invoice = await markInvoicePaid(id);
+    return invoice ? Response.json({ data: invoice }) : Response.json({ error: 'Không tìm thấy hóa đơn.' }, { status: 404 });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
 function errorResponse(error: unknown) {
   if (error instanceof InvoiceValidationError) return Response.json({ error: error.message }, { status: 400 });

@@ -1,6 +1,6 @@
 import { MongoServerError, ObjectId, type Filter, type WithId } from 'mongodb';
 import { getDatabase } from '@/backend/database/mongodb';
-import type { CreateInvoiceInput, Invoice, InvoiceListResult, InvoiceStatus, UtilityReading } from './invoice.types';
+import type { CreateInvoiceInput, Invoice, InvoiceListResult, InvoiceStatus, RoomInvoiceSummary, UtilityReading } from './invoice.types';
 
 type InvoiceDocument = {
   code: string;
@@ -45,6 +45,21 @@ async function getCollections() {
 
 export async function ensureInvoiceDatabase() {
   await getCollections();
+}
+
+export async function getRoomInvoiceSummaries(): Promise<RoomInvoiceSummary[]> {
+  const { invoices } = await getCollections();
+  return invoices.aggregate<RoomInvoiceSummary>([
+    {
+      $group: {
+        _id: '$roomId',
+        invoiceCount: { $sum: 1 },
+        unpaidCount: { $sum: { $cond: [{ $ne: ['$status', 'PAID'] }, 1, 0] } },
+        unpaidAmount: { $sum: { $cond: [{ $ne: ['$status', 'PAID'] }, '$totalAmount', 0] } }
+      }
+    },
+    { $project: { _id: 0, roomId: { $toString: '$_id' }, invoiceCount: 1, unpaidCount: 1, unpaidAmount: 1 } }
+  ]).toArray();
 }
 
 function toInvoice(document: WithId<InvoiceDocument>): Invoice {
@@ -103,9 +118,11 @@ function invoiceFields(input: CreateInvoiceInput, resolved: Awaited<ReturnType<t
   };
 }
 
-export async function listInvoices(options: { page: number; limit: number; period?: string }): Promise<InvoiceListResult> {
+export async function listInvoices(options: { page: number; limit: number; period?: string; roomId?: string; unpaidOnly?: boolean }): Promise<InvoiceListResult> {
   const { invoices } = await getCollections();
   const filter: Filter<InvoiceDocument> = options.period ? { period: options.period } : {};
+  if (options.roomId) filter.roomId = new ObjectId(options.roomId);
+  if (options.unpaidOnly) filter.status = { $ne: 'PAID' };
   const [documents, total] = await Promise.all([
     invoices.find(filter).sort({ period: -1, createdAt: -1 }).skip((options.page - 1) * options.limit).limit(options.limit).toArray(),
     invoices.countDocuments(filter)
@@ -169,4 +186,26 @@ export async function deleteInvoice(id: string): Promise<boolean> {
   if (!ObjectId.isValid(id)) return false;
   const { invoices } = await getCollections();
   return (await invoices.deleteOne({ _id: new ObjectId(id) })).deletedCount === 1;
+}
+
+export async function markInvoicePaid(id: string): Promise<Invoice | null> {
+  if (!ObjectId.isValid(id)) return null;
+  const { invoices } = await getCollections();
+  const document = await invoices.findOneAndUpdate(
+    { _id: new ObjectId(id) },
+    { $set: { status: 'PAID', updatedAt: new Date() } },
+    { returnDocument: 'after' }
+  );
+  return document ? toInvoice(document) : null;
+}
+
+export async function markInvoicesPaid(ids: string[]): Promise<{ data: Invoice[]; updatedCount: number }> {
+  const { invoices } = await getCollections();
+  const invoiceIds = ids.map((id) => new ObjectId(id));
+  const result = await invoices.updateMany(
+    { _id: { $in: invoiceIds }, status: { $ne: 'PAID' } },
+    { $set: { status: 'PAID', updatedAt: new Date() } }
+  );
+  const documents = await invoices.find({ _id: { $in: invoiceIds } }).toArray();
+  return { data: documents.map(toInvoice), updatedCount: result.modifiedCount };
 }
