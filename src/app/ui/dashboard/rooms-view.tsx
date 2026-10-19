@@ -7,6 +7,7 @@ import type { InvoiceListResult, RoomInvoiceSummary } from '@/backend/invoices/i
 import type { Room, RoomStatus } from '@/backend/rooms/room.types';
 import type { Tenant } from '@/backend/tenants/tenant.types';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RoomContractDialog } from './contracts-view';
 import { RoomInvoiceDialog, UPCOMING_INVOICE_PERIOD } from './invoices-view';
@@ -35,6 +36,47 @@ async function getInvoiceSummaries(): Promise<{ data: RoomInvoiceSummary[] }> {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || 'Không thể tải tổng hợp hóa đơn.');
   return payload;
+}
+
+function RoomMembersDialog({ room, tenants, onClose }: { room: Room; tenants: Tenant[]; onClose: () => void }) {
+  const members = room.members || [];
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className='max-h-[90vh] max-w-md overflow-y-auto'>
+        <DialogHeader className='pr-10'>
+          <DialogTitle>{room.name} — Thông tin nhân khẩu</DialogTitle>
+          <DialogDescription>{room.people} người đang ở trong phòng</DialogDescription>
+        </DialogHeader>
+        <div className='mt-4 space-y-3'>
+          {members.map((member) => {
+            const tenant = tenants.find((item) => item.id === member.tenantId);
+            return (
+              <div
+                key={member.tenantId}
+                className='flex items-start justify-between gap-3 border-b border-slate-100 pb-3 last:border-0 last:pb-0'
+              >
+                <div>
+                  <p className='text-sm font-semibold text-slate-800'>{member.fullName}</p>
+                  {tenant?.phone && <p className='mt-0.5 text-xs text-slate-400'>{tenant.phone}</p>}
+                </div>
+                <div className='flex flex-col items-end gap-1'>
+                  <Badge variant={member.role === 'PRIMARY_TENANT' ? 'success' : 'secondary'}>
+                    {member.role === 'PRIMARY_TENANT' ? 'Chủ phòng' : 'Thành viên'}
+                  </Badge>
+                  <span className='text-[10px] text-slate-400'>
+                    Vào ở: {new Intl.DateTimeFormat('vi-VN').format(new Date(member.moveInDate))}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <DialogFooter className='mt-5'>
+          <button type='button' onClick={onClose} className='soft-button px-5'>Đóng</button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function InvoiceBadge({ summary, loading, error }: { summary?: RoomInvoiceSummary; loading: boolean; error: boolean }) {
@@ -79,6 +121,7 @@ export function RoomsView({
   const [contractRoom, setContractRoom] = useState<Room | null>(null);
   const [invoiceRoom, setInvoiceRoom] = useState<Room | null>(null);
   const [debtRoom, setDebtRoom] = useState<Room | null>(null);
+  const [membersRoom, setMembersRoom] = useState<Room | null>(null);
   const invoicesQuery = useQuery({ queryKey: ['invoices'], queryFn: getInvoices });
   const summariesQuery = useQuery({ queryKey: ['invoices', 'room-summary'], queryFn: getInvoiceSummaries });
   const summaryByRoom = new Map(summariesQuery.data?.data.map((summary) => [summary.roomId, summary]));
@@ -159,10 +202,22 @@ export function RoomsView({
                   </p>
                 </TableCell>
                 <TableCell className='px-5 py-4 text-center'>
-                  <span className='inline-flex items-center gap-1.5 font-semibold text-slate-600'>
-                    <UsersRound size={14} />
-                    {room.people}
-                  </span>
+                  {room.members?.length ? (
+                    <button
+                      type='button'
+                      onClick={() => setMembersRoom(room)}
+                      aria-label={`Danh sách người ở ${room.name}`}
+                      className='inline-flex items-center gap-1.5 font-semibold text-slate-600 transition hover:text-emerald-700 hover:underline'
+                    >
+                      <UsersRound size={14} />
+                      {room.people}
+                    </button>
+                  ) : (
+                    <span className='inline-flex items-center gap-1.5 font-semibold text-slate-400'>
+                      <UsersRound size={14} />
+                      {room.people}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className='px-5 py-4'>
                   <p className='font-bold text-emerald-700'>{formatMoney(room.price)}</p>
@@ -279,6 +334,7 @@ export function RoomsView({
         )}
       </div>
       {editingRoom && <EditRoomModal room={editingRoom} onClose={() => setEditingRoom(null)} onSave={onUpdate} />}
+      {membersRoom && <RoomMembersDialog room={membersRoom} tenants={tenants} onClose={() => setMembersRoom(null)} />}
       {debtRoom && <RoomDebtDialog room={debtRoom} onClose={() => setDebtRoom(null)} />}
       {contractRoom && <RoomContractDialog room={contractRoom} rooms={rooms} tenants={tenants} onClose={() => setContractRoom(null)} />}
       {invoiceRoom && (
