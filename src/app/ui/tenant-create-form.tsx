@@ -269,6 +269,14 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
     mode: 'onBlur'
   });
   const values = useWatch({ control }) as TenantFormValues;
+  const hasOtherPrimaryTenant = (roomId: string) => {
+    const room = rooms.find((item) => item.id === roomId);
+    return Boolean(
+      (room?.primaryTenantId && room.primaryTenantId !== tenant?.id) ||
+      room?.members?.some((member) => member.role === 'PRIMARY_TENANT' && member.tenantId !== tenant?.id)
+    );
+  };
+  const ownerDisabled = hasOtherPrimaryTenant(values.roomId);
 
   function updateField<K extends FieldPath<TenantFormValues>>(field: K, value: FieldPathValue<TenantFormValues, K>) {
     setValue(field, value, { shouldDirty: true, shouldValidate: true });
@@ -460,7 +468,13 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
           <FormSection icon={Home} number={4} title='Phân vào phòng'>
             <div>
               <FieldLabel required>Phòng</FieldLabel>
-              <Select value={values.roomId} onValueChange={(value) => updateField('roomId', value)}>
+              <Select
+                value={values.roomId}
+                onValueChange={(value) => {
+                  updateField('roomId', value);
+                  if (hasOtherPrimaryTenant(value)) updateField('role', 'member');
+                }}
+              >
                 <SelectTrigger>
                   <span className='flex min-w-0 items-center gap-2'>
                     <Home className='size-4 shrink-0 text-slate-400' />
@@ -483,11 +497,14 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
               <FieldLabel required>Vai trò trong phòng</FieldLabel>
               <RadioGroup
                 value={values.role}
-                onValueChange={(value) => updateField('role', value as TenantFormValues['role'])}
+                onValueChange={(value) => {
+                  if (value === 'owner' && ownerDisabled) return;
+                  updateField('role', value as TenantFormValues['role']);
+                }}
                 className='grid sm:grid-cols-2'
               >
-                <label className='flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3.5 transition has-data-[state=checked]:border-emerald-400 has-data-[state=checked]:bg-emerald-50/60'>
-                  <RadioGroupItem value='owner' className='mt-0.5' />
+                <label className={`flex items-start gap-3 rounded-xl border border-slate-200 p-3.5 transition has-data-[state=checked]:border-emerald-400 has-data-[state=checked]:bg-emerald-50/60 ${ownerDisabled ? 'cursor-not-allowed bg-slate-50 opacity-50' : 'cursor-pointer'}`}>
+                  <RadioGroupItem value='owner' disabled={ownerDisabled} className='mt-0.5' />
                   <span>
                     <span className='block text-xs font-bold text-slate-700'>Chủ phòng</span>
                     <span className='mt-1 block text-[10px] text-slate-400'>Người đại diện chính, chịu trách nhiệm phòng</span>
@@ -501,6 +518,7 @@ export function TenantCreateForm({ rooms, tenant }: { rooms: Room[]; tenant?: Te
                   </span>
                 </label>
               </RadioGroup>
+              {ownerDisabled && <p className='mt-2 text-[11px] text-slate-500'>Phòng này đã có chủ phòng. Người thuê mới chỉ có thể là thành viên.</p>}
               <FieldError message={errors.role?.message} />
             </div>
           </FormSection>
